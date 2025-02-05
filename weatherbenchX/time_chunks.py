@@ -1,0 +1,141 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Time generator that defines chunks for evaluation.
+
+Chunks can be defined in init_time and lead_time dimensions.
+"""
+
+from collections.abc import Iterable, Iterator
+import itertools
+from typing import Optional, Tuple, Union
+import numpy as np
+
+
+# Tuple of (init_times, lead_times).
+TimeChunk = Tuple[np.ndarray, Union[np.ndarray, slice]]
+
+
+class TimeChunks(Iterable[TimeChunk]):
+  """Iterable defining chunks in init and lead time."""
+
+  def __init__(
+      self,
+      init_times: np.ndarray,
+      lead_times: Union[
+          np.ndarray,
+          slice,
+      ],
+      init_time_chunk_size: Optional[int] = None,
+      lead_time_chunk_size: Optional[int] = None,
+  ):
+    """Init.
+
+    Args:
+      init_times: Numpy array of init_times (dtype: np.datetime64).
+      lead_times: To specify exact lead times, array of np.timedelta64. For a
+        lead_time interval, specify slice of np.timedelta64's. End point is
+        inclusive following pandas/xarray conventions. start and stop are
+        mandatory for slice. step parameter is not used.
+      init_time_chunk_size: Chunk size in init_time dimension. None specifies a
+        single chunk (default).
+      lead_time_chunk_size: Chunk size in lead_time dimension. None specifies a
+        single chunk (default). Must be None in the case of a single lead_time
+        slice.
+
+    Iterator returns tuples of (init_times, lead_times) chunks. The chunks
+    are products of the individual init_times and lead_times chunks. See example
+    below.
+
+    init_time is an array of np.datetime64's. For exact lead times, lead_time is
+    an array of np.timedelta64's. For lead time intervals, lead_time is a slice
+    indicating start and stop as np.timedelta64's.
+
+    Example 1: Exact lead times
+        >>> from weatherbenchX import time_chunks
+        >>> init_times = np.arange(
+        >>>     '2020-01-01T00',
+        >>>     '2020-01-02T00',
+        >>>     np.timedelta64(6, 'h'),
+        >>>     dtype="datetime64"
+        >>>     )
+        >>> lead_times = np.arange(0, 18, 6, dtype='timedelta64[h]')
+        >>> times = time_chunks.TimeChunks(
+        >>>     init_times,
+        >>>     lead_times,
+        >>>     init_time_chunk_size=2,
+        >>>     lead_time_chunk_size=2
+        >>>     )
+        >>> list(times)
+        [(array(['2020-01-01T00', '2020-01-01T06'], dtype='datetime64[h]'),
+        array([0, 6], dtype='timedelta64[h]')),
+        (array(['2020-01-01T00', '2020-01-01T06'], dtype='datetime64[h]'),
+        array([12], dtype='timedelta64[h]')),
+        (array(['2020-01-01T12', '2020-01-01T18'], dtype='datetime64[h]'),
+        array([0, 6], dtype='timedelta64[h]')),
+        (array(['2020-01-01T12', '2020-01-01T18'], dtype='datetime64[h]'),
+        array([12], dtype='timedelta64[h]'))]
+
+    Example 2: Lead time interval
+        >>> lead_times = slice(np.timedelta64(0), np.timedelta64(6, 'h'))
+        >>> times = time_chunks.TimeChunks(
+        >>>     init_times,
+        >>>     lead_times,
+        >>>     init_time_chunk_size=2,
+        >>>     lead_time_chunk_size=None   # Must be None for slice
+        >>>     )
+        >>> list(times)
+        [(array(['2020-01-01T00', '2020-01-01T06'], dtype='datetime64[h]'),
+          slice(numpy.timedelta64(0), numpy.timedelta64(6,'h'), None)),
+        (array(['2020-01-01T12', '2020-01-01T18'], dtype='datetime64[h]'),
+          slice(numpy.timedelta64(0), numpy.timedelta64(6,'h'), None))]
+    """
+
+    init_times = init_times.astype('datetime64[ns]')
+
+    # If chunk size is None, return all elements in a single chunk.
+    if not init_time_chunk_size:
+      init_time_chunk_size = len(init_times)
+    # Split init_times into chunks
+    self._init_time_chunks = [
+        init_times[i : i + init_time_chunk_size]
+        for i in range(0, len(init_times), init_time_chunk_size)
+    ]
+
+    if isinstance(lead_times, slice):
+      # Enforce slice start and stop to be specified and step be None.
+      if lead_times.start is None or lead_times.stop is None:
+        raise ValueError('Slice start and stop must be specified.')
+      if lead_times.step is not None:
+        raise ValueError('Slice step must be None.')
+
+      if lead_time_chunk_size:
+        raise ValueError('Chunking in lead time not compatible for slice.')
+      self._lead_time_chunks = [lead_times]
+    elif isinstance(lead_times, np.ndarray):
+      lead_times = lead_times.astype('timedelta64[ns]')
+      if not lead_time_chunk_size:
+        lead_time_chunk_size = len(lead_times)
+      # Split lead_times into chunks
+      self._lead_time_chunks = [
+          lead_times[i : i + lead_time_chunk_size]
+          for i in range(0, len(lead_times), lead_time_chunk_size)
+      ]
+    else:
+      raise ValueError('Lead times must be either np.ndarray or slice.')
+
+  def __iter__(self) -> Iterator[TimeChunk]:
+    return itertools.product(self._init_time_chunks, self._lead_time_chunks)
+
+  def __len__(self) -> int:
+    return len(self._init_time_chunks) * len(self._lead_time_chunks)
