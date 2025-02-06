@@ -13,7 +13,7 @@ The core design principles behind WeatherBench-X are:
 - Xarray: All internal logic is based on xarray DataArrays.
 - Scalability: Each operation can be split into small chunks allowing scalable evaluation of very large datasets through Apache Beam.
 
-To get started using WeatherBench-X, check out the [quickstart notebook](https://weatherbenchX.readthedocs.io/en/latest/WeatherBench-X_Quickstart.html).
+To get started using WeatherBench-X, check out the [quickstart notebook](https://weatherbench-x.readthedocs.io/en/latest/wbx_quickstart.html).
 
 ## License
 
