@@ -1,4 +1,4 @@
-name: CI
+name: Lint
 
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    name: "python ${{ matrix.python-version }} tests"
+    name: "python ${{ matrix.python-version }} lint"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,9 +23,9 @@ jobs:
       with:
         access_token: ${{ github.token }}
       if: ${{github.ref != 'refs/head/main'}}
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
     - name: Get pip cache dir
@@ -34,13 +34,13 @@ jobs:
         python -m pip install --upgrade pip wheel
         echo "::set-output name=dir::$(pip cache dir)"
     - name: pip cache
-      uses: actions/cache@v4
+      uses: actions/cache@v2
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
         key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
     - name: Install Weatherbench-X
       run: |
         pip install -e .[tests]
-    - name: Run unit tests
+    - name: Lint with pyink
       run: |
-        pytest weatherbenchX
+        pyink --check --diff --color .
