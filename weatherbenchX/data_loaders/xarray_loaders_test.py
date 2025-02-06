@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from absl import flags
 from absl.testing import absltest
 import numpy as np
 from weatherbenchX import test_utils
@@ -139,3 +140,6 @@ class XarrayLoadersTest(absltest.TestCase):
 
 if __name__ == '__main__':
   absltest.main()
+else:
+  # Manually parse flags to prevent UnparsedFlagAccessError when using pytest.
+  flags.FLAGS(['--test_tmpdir'])
