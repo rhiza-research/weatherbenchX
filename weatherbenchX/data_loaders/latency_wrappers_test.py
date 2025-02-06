@@ -13,7 +13,6 @@
 # limitations under the License.
 """Tests for latency wrappers."""
 
-from absl import flags
 from absl.testing import absltest
 import numpy as np
 from weatherbenchX import test_utils

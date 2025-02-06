@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from absl import flags
 from absl.testing import absltest
 from apache_beam.testing import test_pipeline
 import numpy as np
