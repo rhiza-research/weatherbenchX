@@ -163,6 +163,3 @@ class LatencyWrappersTest(absltest.TestCase):
 
 if __name__ == '__main__':
   absltest.main()
-else:
-  # Manually parse flags to prevent UnparsedFlagAccessError when using pytest.
-  flags.FLAGS(['--test_tmpdir'])
