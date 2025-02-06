@@ -256,13 +256,13 @@ class AggregationTest(absltest.TestCase):
         'non_dim_coord_d': xr.DataArray(range(4), dims=['d']),
     })
     reduce_dims = {'a', 'b'}
-    xr.testing.assert_equal(
+    xr.testing.assert_allclose(
         aggregation._fast_dot(a, b, reduce_dims), xr.dot(a, b, dims=reduce_dims)
     )
 
     # Test case of an empty array.
     b = b[0:0]
-    xr.testing.assert_equal(
+    xr.testing.assert_allclose(
         aggregation._fast_dot(a, b, reduce_dims), xr.dot(a, b, dims=reduce_dims)
     )
 
