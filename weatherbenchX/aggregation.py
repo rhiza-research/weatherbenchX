@@ -15,7 +15,7 @@
 
 import dataclasses
 import math
-from typing import Collection, Hashable, Mapping, Optional, Sequence, Union
+from typing import Collection, Hashable, Mapping, Optional, Sequence
 
 import numpy as np
 from weatherbenchX import binning

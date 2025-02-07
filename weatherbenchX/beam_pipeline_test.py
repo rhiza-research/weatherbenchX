@@ -15,7 +15,6 @@
 from absl.testing import absltest
 from apache_beam.testing import test_pipeline
 import numpy as np
-import sys
 from weatherbenchX import aggregation
 from weatherbenchX import beam_pipeline
 from weatherbenchX import test_utils
@@ -107,4 +106,3 @@ class BeamPipelineTest(absltest.TestCase):
 
 if __name__ == '__main__':
   absltest.main()
-

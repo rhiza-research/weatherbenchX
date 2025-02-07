@@ -16,8 +16,8 @@
 from absl.testing import absltest
 import numpy as np
 from weatherbenchX import test_utils
-from weatherbenchX.data_loaders import xarray_loaders
 from weatherbenchX.data_loaders import latency_wrappers
+from weatherbenchX.data_loaders import xarray_loaders
 
 
 class LatencyWrappersTest(absltest.TestCase):

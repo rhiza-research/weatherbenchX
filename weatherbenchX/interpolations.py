@@ -18,7 +18,6 @@ from collections.abc import Iterable
 import dataclasses
 from typing import Hashable, Mapping, Optional, Sequence, Union
 import numpy as np
-from scipy import ndimage
 from weatherbenchX import xarray_tree
 from weatherbenchX.metrics import spatial
 from weatherbenchX.metrics import wrappers

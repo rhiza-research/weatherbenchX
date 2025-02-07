@@ -13,7 +13,7 @@
 # limitations under the License.
 """Data loaders for tabular data stored in Parquet format."""
 
-from typing import Callable, Hashable, Mapping, Optional, Sequence, Union, cast
+from typing import Callable, Hashable, Mapping, Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 import pyarrow
