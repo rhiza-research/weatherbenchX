@@ -14,6 +14,7 @@
 """Data loaders for tabular data stored in Parquet format."""
 
 from typing import Callable, Hashable, Mapping, Optional, Sequence, Union
+import os
 import numpy as np
 import pandas as pd
 import pyarrow
@@ -54,17 +55,18 @@ def parquet_filename_for_time(path: str, time: np.datetime64, unit: str) -> str:
   month = time.item().month
   if unit == 'M':
     fn = (
-        f'{path}/year={year}/month={month}/{year}-{str(month).zfill(2)}.parquet'
+        f'year={year}/month={month}/{year}-{str(month).zfill(2)}.parquet'
     )
   elif unit == 'D':
     day = time.item().day
-    fn = f'{path}/year={year}/month={month}/day={day}/{year}-{str(month).zfill(2)}-{str(day).zfill(2)}.parquet'
+    fn = f'year={year}/month={month}/day={day}/{year}-{str(month).zfill(2)}-{str(day).zfill(2)}.parquet'
   elif unit == 'h':
     day = time.item().day
     hour = time.item().hour
-    fn = f'{path}/year={year}/month={month}/day={day}/hour={hour}/{year}-{str(month).zfill(2)}-{str(day).zfill(2)}T{str(hour).zfill(2)}.parquet'
+    fn = f'year={year}/month={month}/day={day}/hour={hour}/{year}-{str(month).zfill(2)}-{str(day).zfill(2)}T{str(hour).zfill(2)}.parquet'
   else:
     raise NotImplementedError
+  fn = os.path.join(path, fn)
   return fn
 
 
