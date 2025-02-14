@@ -41,7 +41,7 @@ def add_nan_mask_to_data(
     if not variable_subset or var in variable_subset:
       data[var].coords['mask'] = ~np.isnan(data[var])
     else:
-      data[var].coords['mask'] = np.ones_like(data[var], dtype=bool)
+      data[var].coords['mask'] = xr.ones_like(data[var], dtype=bool)
   return data
 
 
