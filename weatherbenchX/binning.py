@@ -272,7 +272,7 @@ class ByCoordBins(Binning):
     for start, stop in zip(self.bin_edges[:-1], self.bin_edges[1:]):
       mask = np.logical_and(
           statistic.coords[self.dim_name] >= start,
-          statistic[self.dim_name] < stop,
+          statistic.coords[self.dim_name] < stop,
       )
       mask = mask.drop([self.dim_name]).expand_dims(self.dim_name, axis=0)
       mask.coords[self.dim_name] = np.array([start])
