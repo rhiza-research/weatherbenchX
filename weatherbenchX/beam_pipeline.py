@@ -172,7 +172,7 @@ class WriteMetrics(beam.DoFn):
     """
     self.out_path = out_path
 
-  def process(self, metrics: xr.Dataset):
+  def process(self, metrics: xr.Dataset) -> None:
     """Writes the metrics to a NetCDF file.
 
     Args:
@@ -181,6 +181,7 @@ class WriteMetrics(beam.DoFn):
     logging.info('WriteMetrics inputs: %s', metrics)
     with fsspec.open(self.out_path, 'wb', auto_mkdir=True) as f:
       f.write(metrics.to_netcdf())
+    return None
 
 
 def define_pipeline(
