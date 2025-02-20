@@ -37,6 +37,7 @@ wrappers.WrappedMetric(
 """
 
 import abc
+from collections.abc import Sequence
 from typing import Hashable, Iterable, Mapping, Union
 import numpy as np
 from weatherbenchX import xarray_tree
@@ -216,6 +217,66 @@ class WrappedMetric(base.Metric):
       # Apply wrappers in reverse order since the last one will be called first.
       for wrapper in self.transforms[::-1]:
         stat = WrappedStatistic(stat, wrapper)
+      stats[name] = stat
+    return stats
+
+  def _values_from_mean_statistics_with_internal_names(
+      self,
+      statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
+  ) -> Mapping[Hashable, xr.DataArray]:
+    return self.metric._values_from_mean_statistics_with_internal_names(  # pylint: disable=protected-access
+        statistic_values
+    )
+
+
+class SubselectVariablesForStatistic(base.Statistic):
+  """Only compute variables for a subset of variables."""
+
+  def __init__(self, statistic: base.Statistic, variables: Sequence[str]):
+    """Init.
+
+    Args:
+      statistic: Statistic object to wrap.
+      variables: Variables to compute the statistic for.
+    """
+    self.statistic = statistic
+    self.variables = variables
+
+  @property
+  def unique_name(self) -> str:
+    # Make sure to change unique name in case there is another, non-subsetted
+    # statistic with the same name.
+    variables_str = '_'.join(self.variables)
+    return f'{self.statistic.unique_name}_{variables_str}'
+
+  def compute(
+      self,
+      predictions: Mapping[Hashable, xr.DataArray],
+      targets: Mapping[Hashable, xr.DataArray],
+  ) -> Mapping[Hashable, xr.DataArray]:
+    predictions = {k: v for k, v in predictions.items() if k in self.variables}
+    targets = {k: v for k, v in targets.items() if k in self.variables}
+    return self.statistic.compute(predictions, targets)
+
+
+class SubselectVariables(base.Metric):
+  """Only compute metric for a subset of variables."""
+
+  def __init__(self, metric: base.Metric, variables: Sequence[str]):
+    """Init.
+
+    Args:
+      metric: Metric to wrap.
+      variables: Variables to compute the metric for.
+    """
+    self.metric = metric
+    self.variables = variables
+
+  @property
+  def statistics(self) -> Mapping[Hashable, base.Statistic]:
+    stats = {}
+    for name, stat in self.metric.statistics.items():
+      stat = SubselectVariablesForStatistic(stat, self.variables)
       stats[name] = stat
     return stats
 

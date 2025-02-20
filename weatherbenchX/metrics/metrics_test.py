@@ -316,6 +316,36 @@ class MetricsTest(parameterized.TestCase):
         metric_values.sel(threshold_value=50, threshold_probability=0.75), 0
     )
 
+  def test_variable_subselection_wrapper(self):
+    target = test_utils.mock_prediction_data(
+        time_start='2020-01-01T00',
+        time_stop='2020-01-20T00',
+        variables_2d=['2m_temperature', '10m_wind_speed'],
+        variables_3d=['geopotential'],
+    )
+    prediction = test_utils.mock_prediction_data(
+        time_start='2020-01-01T00',
+        time_stop='2020-01-03T00',
+        ensemble_size=10,
+        variables_2d=['2m_temperature', '10m_wind_speed'],
+        variables_3d=['geopotential'],
+    )
+    metrics = {
+        'rmse': wrappers.SubselectVariables(
+            deterministic.RMSE(), ['2m_temperature', 'geopotential']
+        ),
+        'mae': wrappers.SubselectVariables(
+            deterministic.MAE(), ['10m_wind_speed']
+        ),
+    }
+    results = compute_all_metrics(
+        metrics, prediction, target, reduce_dims=['latitude', 'longitude']
+    )
+    self.assertSetEqual(
+        set(results),
+        {'mae.10m_wind_speed', 'rmse.2m_temperature', 'rmse.geopotential'},
+    )
+
   def test_wind_vector_rmse(self):
     target = (
         test_utils.mock_prediction_data(
