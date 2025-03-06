@@ -4,9 +4,9 @@ This is a guide on how to reproduce the scores and figures on the official [Weat
 
 ## Running the evaluation script
 
-The main evaluation script is located here: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/run_benchmark_evaluation.py
+The main evaluation script is located here: [https://github.com/google-research/weatherbench2/blob/main/public_benchmark/run_benchmark_evaluation.py](https://github.com/google-research/weatherbench2/blob/main/public_benchmark/run_benchmark_evaluation.py)
 
-The script works in combination with a config file that defines the data loader settings for a given model/ground truth, year and resolution: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/public_configs.py
+The script works in combination with a config file that defines the data loader settings for a given model/ground truth, year and resolution: [https://github.com/google-research/weatherbench2/blob/main/public_benchmark/public_configs.py](https://github.com/google-research/weatherbench2/blob/main/public_benchmark/public_configs.py)
 
 This config file uses data on the public WeatherBench bucket, see [Data Guide](https://weatherbench2.readthedocs.io/en/latest/data-guide.html).
 
@@ -57,7 +57,7 @@ python run_benchmark_evaluation.py \
 The precomputed results can be found here: [gs://weatherbench2/benchmark_results](https://console.cloud.google.com/storage/browser/weatherbench2/benchmark_results).
 
 ## Combining the results
-For further use, e.g. to produce the scorecards or interactive graphics, we combine the results into a single file. This is done with this script: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/combine_results.py
+For further use, e.g. to produce the scorecards or interactive graphics, we combine the results into a single file. This is done with this script: [https://github.com/google-research/weatherbench2/blob/main/public_benchmark/combine_results.py](https://github.com/google-research/weatherbench2/blob/main/public_benchmark/combine_results.py)
 
 Deterministic and probabilistic results are processed separately. The script runs locally and can take a few minutes.
 
@@ -71,10 +71,10 @@ python combine_results.py \
 
 ## Plot the scorecards
 
-To plot the scorecards, follow this notebook: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/WB_X_Website_Scorecard.ipynb
+To plot the scorecards, follow this notebook: [https://github.com/google-research/weatherbench2/blob/main/public_benchmark/WB_X_Website_Scorecard.ipynb](https://github.com/google-research/weatherbench2/blob/main/public_benchmark/WB_X_Website_Scorecard.ipynb)
 
 ## Interactive graphics
 
-The code for the interactive graphics (Deterministic and Probabilistic tabs on the website) can be found here: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/apps
+The code for the interactive graphics (Deterministic and Probabilistic tabs on the website) can be found here: [https://github.com/google-research/weatherbench2/blob/main/public_benchmark/apps](https://github.com/google-research/weatherbench2/blob/main/public_benchmark/apps)
 
 See the README for a brief guide how to run the apps.
