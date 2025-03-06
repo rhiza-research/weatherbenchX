@@ -200,8 +200,8 @@ class CRPSEnsemble(base.PerVariableMetric):
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
-      skipna_ensemble: If True, ensemble members with NaN values will be ignored
-        in the ensemble mean computations. Default: False.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
     """
     self._ensemble_dim = ensemble_dim
     self._skipna_ensemble = skipna_ensemble
@@ -230,10 +230,26 @@ class CRPSEnsemble(base.PerVariableMetric):
 class UnbiasedEnsembleMeanRMSE(base.PerVariableMetric):
   """Unbiased estimate of the ensemble mean RMSE."""
 
+  def __init__(
+      self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
+  ):
+    """Init.
+
+    Args:
+      ensemble_dim: Name of the ensemble dimension. Default: 'number'.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
+    """
+    self._ensemble_dim = ensemble_dim
+    self._skipna_ensemble = skipna_ensemble
+
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
     return {
-        'UnbiasedEnsembleMeanSquaredError': UnbiasedEnsembleMeanSquaredError()
+        'UnbiasedEnsembleMeanSquaredError': UnbiasedEnsembleMeanSquaredError(
+            ensemble_dim=self._ensemble_dim,
+            skipna_ensemble=self._skipna_ensemble,
+        )
     }
 
   def _values_from_mean_statistics_per_variable(
@@ -258,8 +274,8 @@ class SpreadSkillRatio(base.PerVariableMetric):
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
-      skipna_ensemble: If True, ensemble members with NaN values will be ignored
-        in the ensemble mean computations. Default: False.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
     """
     self._ensemble_dim = ensemble_dim
     self._skipna_ensemble = skipna_ensemble
@@ -310,8 +326,8 @@ class UnbiasedSpreadSkillRatio(base.PerVariableMetric):
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
-      skipna_ensemble: If True, ensemble members with NaN values will be ignored
-        in the ensemble mean computations. Default: False.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
     """
     self._ensemble_dim = ensemble_dim
     self._skipna_ensemble = skipna_ensemble
