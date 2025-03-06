@@ -75,4 +75,6 @@ To plot the scorecards, follow this notebook: https://github.com/google-research
 
 ## Interactive graphics
 
-WIP
+The code for the interactive graphics (Deterministic and Probabilistic tabs on the website) can be found here: https://github.com/google-research/weatherbench2/blob/main/public_benchmark/apps
+
+See the README for a brief guide how to run the apps.
