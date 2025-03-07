@@ -18,7 +18,6 @@ import dash_bootstrap_components as dbc
 import plotly.offline as pyo
 import plotly.graph_objs as go
 
-import seaborn as sns
 import numpy as np
 
 from config import *
