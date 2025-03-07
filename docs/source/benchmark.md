@@ -65,8 +65,8 @@ Deterministic and probabilistic results are processed separately. The script run
 python combine_results.py \
     --input_dir=gs://weatherbench2/benchmark_results \
     --output_dir=./ \
-    --deterministic
-# or -- probabilistic
+    --mode=deterministic
+# or --mode=probabilistic
 ```
 
 ## Plot the scorecards
