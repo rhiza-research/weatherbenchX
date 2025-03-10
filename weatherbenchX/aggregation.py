@@ -89,77 +89,6 @@ def _combining_sum(
   return sum(data_arrays[1:], start=data_arrays[0])
 
 
-def _fast_dot(
-    a: xr.DataArray, b: xr.DataArray, reduce_dims: set[str]
-) -> xr.DataArray:
-  """Implementation of dot product semantically almost equivalent to xr.dot.
-
-  Difference one is that this will only work if all reduce dims are present in
-  both arrays. xr.dot will also sum out any reduce dims present in only one of
-  the arrays. Here this is already taken care of in the calling function, so
-  an error would be raised if this is not the case.
-
-  Difference two is that this implementation requires that all common dims
-  between a and b are also part of reduce_dims. In other words, any binning
-  dimension must also be reduced.
-
-  Args:
-    a: First array.
-    b: Second array.
-    reduce_dims: Set of dimensions to reduce over.
-
-  Returns:
-    The dot product of a and b.
-  """
-  # If data is empty, reshaping array below will fail. In this case, we can just
-  # use the xarray implementation.
-  if a.size == 0 or b.size == 0:
-    return xr.dot(a, b, dim=reduce_dims)
-
-  assert (
-      not set(a.dims).intersection(set(b.dims)) - reduce_dims
-  ), 'Not all common dims between a and b are also part of reduce_dims.'
-
-  def reshape_data(x):
-    """Transformations to apply to both arrays."""
-    array_dims = set(x.dims)
-    assert reduce_dims.issubset(
-        array_dims
-    ), 'Not all reduce_dims are present in the array.'
-    non_reduce_dims = sorted(list(array_dims - reduce_dims))
-    coords = {c: x.coords[c] for c in non_reduce_dims}
-    ordered_dims = non_reduce_dims + sorted(list(reduce_dims))
-
-    # Make sure we are also preserving non-dimension coordinates. But only if
-    # they don't contain any of the reduce_dims.
-    other_coords = {
-        c: x.coords[c]
-        for c in x.coords
-        if c not in x.dims
-        and not set(x.coords[c].dims) - set(non_reduce_dims)  # Must be empty.
-    }
-    len_dims = [x.sizes[c] for c in non_reduce_dims]
-    x = x.transpose(*ordered_dims)
-    # Switch to numpy for reshaping since this is faster than xarray's stack.
-    # Array should how have two dimensions with shape:
-    # (product(non_reduce_dims), product(reduce_dims)).
-    x = x.values.reshape(math.prod(len_dims), -1)
-    return x, non_reduce_dims, coords, other_coords, len_dims
-
-  a, non_reduce_dims_a, coords_a, other_coords_a, len_dims_a = reshape_data(a)
-  b, non_reduce_dims_b, coords_b, other_coords_b, len_dims_b = reshape_data(b)
-  len_dims_out = len_dims_a + len_dims_b
-
-  out = np.dot(a, b.T)
-  out = out.reshape(len_dims_out)
-  out = xr.DataArray(
-      out,
-      dims=non_reduce_dims_a + non_reduce_dims_b,
-      coords=coords_a | coords_b | other_coords_a | other_coords_b,
-  )
-  return out
-
-
 @dataclasses.dataclass
 class AggregationState:
   """An object that contains sum of weighted statistics and sum of weights.
@@ -318,7 +247,7 @@ class Aggregator:
       # the bin masks dimensions that we are not preserving. The
       # bin_dim_names dimensions will always be preserved.
       bin_index_reduce_dims = reduce_dims_set - non_bin_index_reduce_dims
-      binned_data = _fast_dot(bin_masks, stat, bin_index_reduce_dims)
+      binned_data = xr.dot(bin_masks, stat, dim=list(bin_index_reduce_dims))
 
       return binned_data
 
@@ -364,7 +293,7 @@ class Aggregator:
         ones = ones.where(~stat.isnull(), 0)
       if self.masked and hasattr(stat, 'mask'):
         ones = ones.where(stat.mask, 0)
-      return batch_aggregator_for_var_and_stat(ones)
+      return self.aggregation_fn(ones)
 
     def filter_nones(x):
       result = {}
@@ -397,7 +326,7 @@ def compute_metric_values_for_single_chunk(
     targets: Mapping[Hashable, xr.DataArray],
 ) -> xr.Dataset:
   """Convenience function to compute metric results for a given predictions/targets pair.
-  
+
   This is not intended to accumulate over multiple chunks.
 
   Args:

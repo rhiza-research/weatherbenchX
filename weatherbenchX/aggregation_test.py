@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from absl.testing import absltest
-import numpy as np
 from weatherbenchX import aggregation
 from weatherbenchX import binning
 from weatherbenchX import test_utils
@@ -227,43 +226,6 @@ class AggregationTest(absltest.TestCase):
     # Test for correct dimensions.
     self.assertEqual(
         set(actual.dims), set(['bins1', 'bins2', 'lead_time', 'level'])
-    )
-
-  def test_fast_dot(self):
-    # Test that fast dot is equivalent to xr.dot
-    a = xr.DataArray(
-        np.random.rand(2, 3, 4),
-        dims=['a', 'b', 'c'],
-        coords={
-            'a': range(2),  # Reduce
-            'b': range(3),  # Reduce
-            'c': range(4),  # Only in a
-        },
-    )
-    a = a.assign_coords({
-        'non_dim_coord_c': xr.DataArray(range(4), dims=['c']),
-    })
-    b = xr.DataArray(
-        np.random.rand(3, 2, 4),  # different order
-        dims=['b', 'a', 'd'],
-        coords={
-            'a': range(2),
-            'b': range(3),
-            'd': range(4),  # Only in b
-        },
-    )
-    b = b.assign_coords({
-        'non_dim_coord_d': xr.DataArray(range(4), dims=['d']),
-    })
-    reduce_dims = {'a', 'b'}
-    xr.testing.assert_allclose(
-        aggregation._fast_dot(a, b, reduce_dims), xr.dot(a, b, dims=reduce_dims)
-    )
-
-    # Test case of an empty array.
-    b = b[0:0]
-    xr.testing.assert_allclose(
-        aggregation._fast_dot(a, b, reduce_dims), xr.dot(a, b, dims=reduce_dims)
     )
 
 
