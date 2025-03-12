@@ -27,6 +27,7 @@ base_requires = [
     "gcsfs",
     "absl-py",
     "pyarrow",
+    "opt_einsum",
 ]
 docs_requires = [
     "myst-nb",

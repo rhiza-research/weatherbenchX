@@ -27,21 +27,31 @@ def add_nan_mask_to_data(
 ) -> Mapping[Hashable, xr.DataArray]:
   """Adds a boolean coordinate named 'mask' to each variable with False indicating NaN values.
 
+  When applied to targets, these masks should propagate to statistics and will
+  be used by Aggregator (when masked=True) to skip evaluation units
+  corresponding to NaN targets during its aggregation of statistics.
+
+  We strongly recommend to do it this way rather than using skipna=True in the
+  aggregator, because we want unexpected NaNs in the statistics (e.g. arising
+  unexpected NaNs in the predictions or targets, or buggy metrics code) to
+  propagate loudly and cause an error, rather than silently causing some of the
+  evaluation units to be skipped, delivering biased evaluation results which
+  hide a bug.
+
   Args:
     data: Data to add the mask to.
-    variable_subset: If provided, only add the mask to the variables in this
-      list. All other variables will have a mask that is always True (note that
-      this is a bit wasteful in terms of memory!)
+    variable_subset: If provided, only add masks to the variables in this list.
+      Masks use memory and some compute, so we encourage limiting them to
+      variables which are actually expected to contain masking information in
+      the form of NaNs.
 
   Returns:
-    The data with the mask added.
+    The data with any masks added.
   """
   data = dict(data)
   for var in data:
-    if not variable_subset or var in variable_subset:
+    if variable_subset is None or var in variable_subset:
       data[var].coords['mask'] = ~np.isnan(data[var])
-    else:
-      data[var].coords['mask'] = xr.ones_like(data[var], dtype=bool)
   return data
 
 

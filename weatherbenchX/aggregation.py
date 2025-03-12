@@ -14,10 +14,8 @@
 """Definition of aggregation methods and AggregationState."""
 
 import dataclasses
-import math
 from typing import Collection, Hashable, Mapping, Optional, Sequence
 
-import numpy as np
 from weatherbenchX import binning
 from weatherbenchX import weighting
 from weatherbenchX import xarray_tree
@@ -206,53 +204,34 @@ class Aggregator:
     # Recall that masked out values have already been set to zero in
     # aggregate_statistics. The logic below has to respect this.
 
-    # Take product of all weights and bins.
-    if self.weigh_by is not None:
-      weights = math.prod(
-          [weighting_method.weights(stat) for weighting_method in self.weigh_by]
-      )
-      stat = stat * weights
-
     reduce_dims_set = set(self.reduce_dims)
     eval_unit_dims = set(stat.dims)
     if not reduce_dims_set.issubset(eval_unit_dims):
       # Can't reduce over dims that aren't present as evaluation unit dims.
       return None
 
-    if self.bin_by is not None:
-      bin_masks = xr.DataArray(
-          math.prod([
-              binning_method.create_bin_mask(stat)
-              for binning_method in self.bin_by
-          ])
-      )
-      bin_dim_names = set([binning.bin_dim_name for binning in self.bin_by])
-      if len(bin_dim_names) != len(self.bin_by):
-        raise ValueError('Bin dimension names must be unique.')
+    weights = [
+        weighting_method.weights(stat)
+        for weighting_method in self.weigh_by or []
+    ]
 
+    bin_dim_names = {binning.bin_dim_name for binning in self.bin_by or []}
+    if len(bin_dim_names) != len(self.bin_by or []):
+      raise ValueError('Bin dimension names must be unique.')
+
+    bin_masks = []
+    for binning_method in self.bin_by or []:
+      bin_mask = binning_method.create_bin_mask(stat)
       # bin_masks_dims are all of the dims the mask operate with on the input
       # data (e.g. the actual bin dimension does not count).
-      bin_masks_dims = set(bin_masks.dims) - set(bin_dim_names)
-
-      if not bin_masks_dims.issubset(eval_unit_dims):
+      bin_masks_dims = set(bin_mask.dims) - {binning_method.bin_dim_name}
+      if bin_masks_dims.issubset(eval_unit_dims):
+        bin_masks.append(bin_mask)
+      else:
         # Can't bin based on dims that aren't present as evaluation unit dims:
         return None
 
-      # These dimensions don't need preserving, and are also not explicitly
-      # used by the masks, so we just sum them first.
-      non_bin_index_reduce_dims = reduce_dims_set - bin_masks_dims
-      stat = stat.sum(non_bin_index_reduce_dims, skipna=False)
-
-      # Finally we compute the element-wise product, reducing only across
-      # the bin masks dimensions that we are not preserving. The
-      # bin_dim_names dimensions will always be preserved.
-      bin_index_reduce_dims = reduce_dims_set - non_bin_index_reduce_dims
-      binned_data = xr.dot(bin_masks, stat, dim=list(bin_index_reduce_dims))
-
-      return binned_data
-
-    else:  # Simple sum when no binning is applied.
-      return stat.sum(reduce_dims_set, skipna=False)
+    return xr.dot(stat, *weights, *bin_masks, dims=reduce_dims_set)
 
   def aggregate_statistics(
       self,
@@ -281,19 +260,27 @@ class Aggregator:
         # be ignored in mean_statistics(). this is equivalent to multiplying by
         # the mask, but avoids NaN * 0 -> NaN in cases where there are NaNs in
         # masked positions. Only for variables with a mask attribute.
-        if hasattr(stat, 'mask'):
-          stat = stat.where(stat.mask, 0)
+        stat = stat.where(stat.mask, 0)
 
       return self.aggregation_fn(stat)
 
     def batch_aggregator_weights_for_var_and_stat(stat):
-      ones = xr.ones_like(stat)
-      # Make sure the weights are also zero for skipna and masked aggregation.
-      if self.skipna:
-        ones = ones.where(~stat.isnull(), 0)
+      # Avoid use of DataArray.where here which is much slower than casting
+      # of booleans and/or element-wise logical operations on booleans.
       if self.masked and hasattr(stat, 'mask'):
-        ones = ones.where(stat.mask, 0)
-      return self.aggregation_fn(ones)
+        mask = stat.mask
+        if self.skipna:
+          mask = mask & ~stat.isnull()
+        mask = mask.astype(stat.dtype)
+        # We need to broadcast the mask to the same shape as the stat, so that
+        # reductions over it behave the same as reductions over the full stat.
+        mask = mask.broadcast_like(stat)
+      elif self.skipna:
+        mask = (~stat.isnull()).astype(stat.dtype)
+      else:
+        mask = xr.ones_like(stat)
+
+      return self.aggregation_fn(mask)
 
     def filter_nones(x):
       result = {}
