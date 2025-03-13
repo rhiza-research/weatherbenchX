@@ -203,8 +203,9 @@ class ByExactCoord(Binning):
 class ByTimeUnit(Binning):
   """Bin by time unit for given axis.
 
-  This uses the .dt datetime accessor in xarray, so this will only work for
-  datetime64 coordinates.
+  This uses the .dt datetime accessor in xarray, and will work with both
+  datetime64 and timedelta64 coordinates. However, the units should be in the
+  datetime64 convention, i.e. 'second', 'minute', 'hour', etc.
 
   See:
   https://docs.xarray.dev/en/latest/generated/xarray.core.accessor_dt.DatetimeAccessor.html
@@ -238,7 +239,24 @@ class ByTimeUnit(Binning):
       self,
       statistic: xr.DataArray,
   ) -> xr.DataArray:
-    coord = getattr(statistic[self.time_dim].dt, self.unit)
+    dt = statistic[self.time_dim].dt
+    if isinstance(dt, xr.core.accessor_dt.TimedeltaAccessor):
+      coord = statistic[self.time_dim].dt.total_seconds()
+      if self.unit == 'minute':
+        coord = coord / (60)
+      elif self.unit == 'hour':
+        coord = coord / (60 * 60)
+      elif self.unit == 'day':
+        coord = coord / (60 * 60 * 24)
+      elif self.unit == 'week':
+        coord = coord / (60 * 60 * 24 * 7)
+      elif self.unit == 'year':
+        coord = coord / (60 * 60 * 24 * 365)
+      elif self.unit != 'second':
+        raise ValueError(f'Unsupported unit: {self.unit}')
+    else:
+      assert isinstance(dt, xr.core.accessor_dt.DatetimeAccessor)
+      coord = getattr(statistic[self.time_dim].dt, self.unit)
     masks = vectorized_coord_mask(
         coord,
         self.time_dim,

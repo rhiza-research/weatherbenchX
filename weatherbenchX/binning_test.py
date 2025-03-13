@@ -14,6 +14,7 @@
 
 from importlib import resources
 from absl.testing import absltest
+from absl.testing import parameterized
 import numpy as np
 from weatherbenchX import binning
 from weatherbenchX import test_utils
@@ -21,7 +22,7 @@ from weatherbenchX.data_loaders import sparse_parquet
 import xarray as xr
 
 
-class BinningTest(absltest.TestCase):
+class BinningTest(parameterized.TestCase):
 
   def test_region_binning(self):
 
@@ -94,7 +95,7 @@ class BinningTest(absltest.TestCase):
     mask = bins.create_bin_mask(statistic.isel(index=[]))
     self.assertEqual(mask.size, 0)
 
-  def test_by_time_unit_binning(self):
+  def test_by_time_unit_binning_with_with_datetime64(self):
     statistic_values = test_utils.mock_prediction_data(
         time_start='2020-01-01T00',
         time_stop='2020-01-01T12',
@@ -103,6 +104,30 @@ class BinningTest(absltest.TestCase):
     bins = binning.ByTimeUnit('hour', 'time')
     mask = bins.create_bin_mask(statistic_values)
     np.testing.assert_equal(mask.time_hour, np.arange(0, 12))
+
+  @parameterized.parameters(
+      ('second', '1 second', '6 second'),
+      ('minute', '1 minute', '6 minute'),
+      ('hour', '1 hour', '6 hour'),
+      ('day', '1 day', '6 day'),
+      ('week', '7 day', f'{7*6} day'),
+      ('year', '365 day', f'{365*6} day'),
+  )
+  def test_by_time_unit_binning_with_with_timedelta64(
+      self, unit, lead_resolution, lead_stop
+  ):
+    statistic_values = test_utils.mock_prediction_data(
+        time_start='2020-01-01T00',
+        time_stop='2020-01-01T01',
+        time_resolution='1 hr',
+        lead_resolution=lead_resolution,
+        lead_stop=lead_stop,
+    )['2m_temperature']
+    bins = binning.ByTimeUnit(unit, 'prediction_timedelta')
+    mask = bins.create_bin_mask(statistic_values)
+    np.testing.assert_equal(
+        mask[f'prediction_timedelta_{unit}'], np.arange(0, 6 + 1)
+    )
 
   def test_by_coord_bins(self):
     target_path = resources.files('weatherbenchX').joinpath(
