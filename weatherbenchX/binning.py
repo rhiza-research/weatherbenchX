@@ -243,15 +243,15 @@ class ByTimeUnit(Binning):
     if isinstance(dt, xr.core.accessor_dt.TimedeltaAccessor):
       coord = statistic[self.time_dim].dt.total_seconds()
       if self.unit == 'minute':
-        coord = coord / (60)
+        coord = coord // (60)
       elif self.unit == 'hour':
-        coord = coord / (60 * 60)
+        coord = coord // (60 * 60)
       elif self.unit == 'day':
-        coord = coord / (60 * 60 * 24)
+        coord = coord // (60 * 60 * 24)
       elif self.unit == 'week':
-        coord = coord / (60 * 60 * 24 * 7)
+        coord = coord // (60 * 60 * 24 * 7)
       elif self.unit == 'year':
-        coord = coord / (60 * 60 * 24 * 365)
+        coord = coord // (60 * 60 * 24 * 365)
       elif self.unit != 'second':
         raise ValueError(f'Unsupported unit: {self.unit}')
     else:

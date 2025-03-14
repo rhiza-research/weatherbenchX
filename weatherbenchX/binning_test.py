@@ -112,6 +112,7 @@ class BinningTest(parameterized.TestCase):
       ('day', '1 day', '6 day'),
       ('week', '7 day', f'{7*6} day'),
       ('year', '365 day', f'{365*6} day'),
+      ('hour', '15 minute', '6 hour'),
   )
   def test_by_time_unit_binning_with_with_timedelta64(
       self, unit, lead_resolution, lead_stop
