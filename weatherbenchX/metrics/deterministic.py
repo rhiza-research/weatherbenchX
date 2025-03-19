@@ -61,17 +61,38 @@ class SquaredError(base.PerVariableStatistic):
 class PredictionPassthrough(base.PerVariableStatistic):
   """Simply returns predictions."""
 
+  def __init__(self, copy_nans_from_targets: bool = False):
+    """Init.
+
+    Args:
+      copy_nans_from_targets: If True, copy any nans from the targets to the
+        predictions.
+    """
+    self._copy_nans_from_targets = copy_nans_from_targets
+
   def _compute_per_variable(
       self,
       predictions: xr.DataArray,
       targets: xr.DataArray,
   ) -> xr.DataArray:
     # Make sure potential coordinates from targets are preserved.
-    return predictions + xr.zeros_like(targets)
+    result = predictions + xr.zeros_like(targets)
+    if self._copy_nans_from_targets:
+      result = result.where(~targets.isnull())
+    return result
 
 
 class TargetPassthrough(base.PerVariableStatistic):
   """Simply returns targets."""
+
+  def __init__(self, copy_nans_from_predictions: bool = False):
+    """Init.
+
+    Args:
+      copy_nans_from_predictions: If True, copy any nans from the predictions to
+        the predictions.
+    """
+    self._copy_nans_from_predictions = copy_nans_from_predictions
 
   def _compute_per_variable(
       self,
@@ -79,7 +100,10 @@ class TargetPassthrough(base.PerVariableStatistic):
       targets: xr.DataArray,
   ) -> xr.DataArray:
     # Make sure potential coordinates from predictions are preserved.
-    return targets + xr.zeros_like(predictions)
+    result = targets + xr.zeros_like(predictions)
+    if self._copy_nans_from_predictions:
+      result = result.where(~predictions.isnull())
+    return result
 
 
 class WindVectorSquaredError(base.Statistic):
@@ -239,9 +263,22 @@ class RMSE(base.PerVariableMetric):
 class PredictionAverage(base.PerVariableMetric):
   """Average prediction values."""
 
+  def __init__(self, copy_nans_from_targets: bool = False):
+    """Init.
+
+    Args:
+      copy_nans_from_targets: If True, copy any nans from the targets to the
+        predictions.
+    """
+    self._copy_nans_from_targets = copy_nans_from_targets
+
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
-    return {'PredictionPassthrough': PredictionPassthrough()}
+    return {
+        'PredictionPassthrough': PredictionPassthrough(
+            self._copy_nans_from_targets
+        )
+    }
 
   def _values_from_mean_statistics_per_variable(
       self,
@@ -254,9 +291,20 @@ class PredictionAverage(base.PerVariableMetric):
 class TargetAverage(base.PerVariableMetric):
   """Average target values."""
 
+  def __init__(self, copy_nans_from_predictions: bool = False):
+    """Init.
+
+    Args:
+      copy_nans_from_predictions: If True, copy any nans from the predictions to
+        the predictions.
+    """
+    self._copy_nans_from_predictions = copy_nans_from_predictions
+
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
-    return {'TargetPassthrough': TargetPassthrough()}
+    return {
+        'TargetPassthrough': TargetPassthrough(self._copy_nans_from_predictions)
+    }
 
   def _values_from_mean_statistics_per_variable(
       self,

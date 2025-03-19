@@ -626,6 +626,29 @@ class MetricsTest(parameterized.TestCase):
     results = aggregation_state.metric_values(metrics)
     xr.testing.assert_allclose(results, xr.ones_like(results))
 
+  def test_prediction_passthrough(self):
+    predictions = xr.DataArray(
+        np.array([[1.0, 2.0], [np.nan, 4.0]]), dims=['x', 'y']
+    )
+    targets = xr.DataArray(
+        np.array([[5.0, np.nan], [7.0, 8.0]]), dims=['x', 'y']
+    )
+    result = deterministic.PredictionPassthrough(
+        copy_nans_from_targets=False
+    )._compute_per_variable(predictions, targets)
+    expected_result = xr.DataArray(
+        np.array([[1.0, 2.0], [np.nan, 4.0]]), dims=['x', 'y']
+    )
+    xr.testing.assert_allclose(result, expected_result)
+
+    result = deterministic.PredictionPassthrough(
+        copy_nans_from_targets=True
+    )._compute_per_variable(predictions, targets)
+    expected_result = xr.DataArray(
+        np.array([[1.0, np.nan], [np.nan, 4.0]]), dims=['x', 'y']
+    )
+    xr.testing.assert_allclose(result, expected_result)
+
 
 if __name__ == '__main__':
   absltest.main()
