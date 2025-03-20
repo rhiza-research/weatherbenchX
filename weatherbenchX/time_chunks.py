@@ -47,11 +47,11 @@ class TimeChunks(Iterable[TimeChunk]):
         lead_time interval, specify slice of np.timedelta64's. End point is
         inclusive following pandas/xarray conventions. start and stop are
         mandatory for slice. step parameter is not used.
-      init_time_chunk_size: Chunk size in init_time dimension. None specifies a
-        single chunk (default).
-      lead_time_chunk_size: Chunk size in lead_time dimension. None specifies a
-        single chunk (default). Must be None in the case of a single lead_time
-        slice.
+      init_time_chunk_size: Chunk size in init_time dimension. None or zero
+        specifies a single chunk (default).
+      lead_time_chunk_size: Chunk size in lead_time dimension. None or zero
+        specifies a single chunk (default). Must be None in the case of a single
+        lead_time slice.
 
     Iterator returns tuples of (init_times, lead_times) chunks. The chunks
     are products of the individual init_times and lead_times chunks. See example
@@ -100,6 +100,16 @@ class TimeChunks(Iterable[TimeChunk]):
         (array(['2020-01-01T12', '2020-01-01T18'], dtype='datetime64[h]'),
           slice(numpy.timedelta64(0), numpy.timedelta64(6,'h'), None))]
     """
+
+    # -1 is used in xarray_beam, but results in a silent failure here.
+    if init_time_chunk_size is not None and init_time_chunk_size < 0:
+      raise ValueError(
+          f'{init_time_chunk_size=} but should be non-negative or None'
+      )
+    if lead_time_chunk_size is not None and lead_time_chunk_size < 0:
+      raise ValueError(
+          f'{lead_time_chunk_size=} but should be non-negative or None'
+      )
 
     init_times = init_times.astype('datetime64[ns]')
 
