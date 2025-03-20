@@ -130,6 +130,27 @@ class BinningTest(parameterized.TestCase):
         mask[f'prediction_timedelta_{unit}'], np.arange(0, 6 + 1)
     )
 
+  def test_by_time_unit_from_seconds_binning(self):
+    statistic_values = test_utils.mock_prediction_data(
+        time_start='2020-01-01T00',
+        time_stop='2020-01-01T01',
+        time_resolution='1 hr',
+        lead_resolution='1 minute',
+        lead_stop='6 hour',
+    )['2m_temperature']
+    statistic_values = statistic_values.assign_coords({
+        'prediction_timedelta_sec': (
+            statistic_values.prediction_timedelta.dt.total_seconds()
+        )
+    })
+    bins = binning.ByTimeUnitFromSeconds(
+        'hour', 'prediction_timedelta_sec', bins=np.arange(6)
+    )
+    mask = bins.create_bin_mask(statistic_values)
+    np.testing.assert_equal(
+        mask['prediction_timedelta_sec_hour'], np.arange(0, 6)
+    )
+
   def test_by_coord_bins(self):
     target_path = resources.files('weatherbenchX').joinpath(
         'test_data/metar-timeNominal-by-month'

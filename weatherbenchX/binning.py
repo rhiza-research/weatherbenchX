@@ -266,6 +266,60 @@ class ByTimeUnit(Binning):
     return masks
 
 
+class ByTimeUnitFromSeconds(Binning):
+  """Similar to ByTimeUnit, but with the coordinate in seconds as a scalar.
+
+  The seconds values will be converted to the desired time unit.
+
+  This is useful if you want to wrap the computation in jax.jit, which does not
+  support datetime64/timedelta64 coordinates.
+  """
+
+  def __init__(
+      self, unit: str, time_dim: str, bins: Sequence[int] | None = None
+  ):
+    """Init.
+
+    Args:
+      unit: Time unit to bin by, one of 'second', 'minute', 'hour'.
+      time_dim: Time dimension to bin by.
+      bins: Sequence of bins to bin by. If None, will use default bins depending
+      on the unit (e.g. 0 through 23 for hour). Note that these defaults won't
+      always make sense (e.g. if binning by lead time, hours can be > 23).
+    """
+
+    super().__init__(f'{time_dim}_{unit}')
+    self.unit = unit
+    self.time_dim = time_dim
+    self.bins = bins
+
+  def create_bin_mask(
+      self,
+      statistic: xr.DataArray,
+  ) -> xr.DataArray:
+    coord = statistic[self.time_dim]
+    bins = self.bins
+
+    if self.unit == 'second':
+      bins = bins if bins is not None else np.arange(0, 60)
+    elif self.unit == 'minute':
+      coord = coord // (60)
+      bins = bins if bins is not None else np.arange(0, 60)
+    elif self.unit == 'hour':
+      coord = coord // (60 * 60)
+      bins = bins if bins is not None else np.arange(0, 24)
+    else:
+      raise ValueError(f'Unsupported unit: {self.unit}')
+
+    bin_dim_name = f'{self.time_dim}_{self.unit}'
+    masks = (
+        coord ==
+        xr.DataArray(bins, dims=[bin_dim_name]).broadcast_like(coord)
+    )
+    masks = masks.assign_coords({bin_dim_name: bins})
+    return masks
+
+
 class ByCoordBins(Binning):
   """Binning by specified bins over a coordinate."""
 
