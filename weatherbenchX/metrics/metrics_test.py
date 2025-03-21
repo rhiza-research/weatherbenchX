@@ -449,12 +449,14 @@ class MetricsTest(parameterized.TestCase):
     )
 
   @parameterized.named_parameters(
-      dict(testcase_name='EnsembleSize4', ensemble_size=4),
-      dict(testcase_name='EnsembleSize5', ensemble_size=5),
+      dict(testcase_name='EnsembleSize4', ensemble_size=4, use_sort=False),
+      dict(testcase_name='EnsembleSize5', ensemble_size=5, use_sort=False),
+      dict(testcase_name='EnsembleSize4_sort', ensemble_size=4, use_sort=True),
+      dict(testcase_name='EnsembleSize5_sort', ensemble_size=5, use_sort=True),
   )
-  def test_crps(self, ensemble_size):
+  def test_crps(self, ensemble_size: int, use_sort: bool):
     def _crps_brute_force(
-        forecast: xr.Dataset, truth: xr.Dataset, skipna: bool
+        forecast: xr.Dataset, truth: xr.Dataset
     ) -> xr.Dataset:
       """The eFAIR version of CRPS from Zamo & Naveau over a chunk of data."""
 
@@ -463,13 +465,13 @@ class MetricsTest(parameterized.TestCase):
         return abs(x).mean(('latitude', 'longitude'))
 
       n_ensemble = forecast.sizes['realization']
-      skill = _l1_norm(truth - forecast).mean('realization', skipna=skipna)
+      skill = _l1_norm(truth - forecast).mean('realization', skipna=False)
       if n_ensemble == 1:
         spread = xr.zeros_like(skill)
       else:
         spread = _l1_norm(
             forecast - forecast.rename({'realization': 'dummy'})
-        ).mean(dim=('realization', 'dummy'), skipna=skipna) * (
+        ).mean(dim=('realization', 'dummy'), skipna=False) * (
             n_ensemble / (n_ensemble - 1)
         )
 
@@ -490,79 +492,18 @@ class MetricsTest(parameterized.TestCase):
     )
 
     # Test equivalience to brute force results.
-    metrics = {'crps': probabilistic.CRPSEnsemble(ensemble_dim='realization')}
+    metrics = {
+        'crps': probabilistic.CRPSEnsemble(
+            ensemble_dim='realization', use_sort=use_sort)
+    }
     results = compute_all_metrics(
         metrics, predictions, targets, reduce_dims=['latitude', 'longitude']
     )
-    expected_results = _crps_brute_force(predictions, targets, skipna=False)
+    expected_results = _crps_brute_force(predictions, targets)
     for v in ['2m_temperature', 'geopotential']:
       xr.testing.assert_allclose(
           expected_results['score'][v], results[f'crps.{v}']
       )
-
-    # Test NaN handling
-    predictions_with_nans = predictions.copy(deep=True)
-    predictions_with_nans[
-        {'realization': 0, 'time': 0, 'prediction_timedelta': 0}
-    ] = np.nan
-    results = compute_all_metrics(
-        metrics,
-        predictions_with_nans,
-        targets,
-        reduce_dims=['latitude', 'longitude'],
-    )
-    self.assertTrue(
-        results['crps.2m_temperature']
-        .isel({'time': 0, 'prediction_timedelta': 0})
-        .isnull()
-    )
-
-    metrics = {
-        'crps': probabilistic.CRPSEnsemble(
-            ensemble_dim='realization', skipna_ensemble=True
-        )
-    }
-    results = compute_all_metrics(
-        metrics,
-        predictions_with_nans,
-        targets,
-        reduce_dims=['latitude', 'longitude'],
-    )
-    self.assertFalse(results['crps.geopotential'].isnull().any())
-
-    # Test MAE equivalence for ensemble size of 1.
-    predictions = predictions.isel(realization=slice(0, 1))
-    results = compute_all_metrics(
-        metrics, predictions, targets, reduce_dims=['latitude', 'longitude']
-    )
-    expected_results = compute_all_metrics(
-        {'mae': deterministic.MAE()},
-        predictions.isel(realization=0, drop=True),
-        targets,
-        reduce_dims=['latitude', 'longitude'],
-    )
-    for v in ['2m_temperature', 'geopotential']:
-      xr.testing.assert_allclose(
-          expected_results[f'mae.{v}'], results[f'crps.{v}']
-      )
-
-    # Also test CRPSSpread and CRPSSkill.
-    crps_spread_results = probabilistic.CRPSSpread(
-        ensemble_dim='realization'
-    ).compute(predictions, targets)['2m_temperature']
-    crps_skill_results = (
-        probabilistic.CRPSSkill(ensemble_dim='realization')
-        .compute(predictions, targets)['2m_temperature']
-        .mean(('latitude', 'longitude'))
-    )
-    expected_crps_spread_results = xr.zeros_like(
-        predictions['2m_temperature'].isel(realization=0, drop=True)
-    )
-    expected_crps_skill_results = expected_results['mae.2m_temperature']
-    xr.testing.assert_allclose(
-        crps_spread_results, expected_crps_spread_results
-    )
-    xr.testing.assert_allclose(crps_skill_results, expected_crps_skill_results)
 
   def test_spread_skill_ratio(self):
     targets = test_utils.mock_target_data(

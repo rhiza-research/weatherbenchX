@@ -26,24 +26,19 @@ import xarray as xr
 class CRPSSkill(base.PerVariableStatistic):
   """The skill measure associated with CRPS, E|X - Y|."""
 
-  def __init__(
-      self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
-  ):
+  def __init__(self, ensemble_dim: str = 'number'):
     self._ensemble_dim = ensemble_dim
-    self._skipna_ensemble = skipna_ensemble
 
   @property
   def unique_name(self) -> str:
-    return f'CRPSSkill_{self._ensemble_dim}_skipna_ensemble_{self._skipna_ensemble}'
+    return f'CRPSSkill_{self._ensemble_dim}'
 
   def _compute_per_variable(
       self,
       predictions: xr.DataArray,
       targets: xr.DataArray,
   ) -> xr.DataArray:
-    return np.abs(predictions - targets).mean(
-        self._ensemble_dim, skipna=self._skipna_ensemble
-    )
+    return np.abs(predictions - targets).mean(self._ensemble_dim, skipna=False)
 
 
 def _rankdata(x: np.ndarray, axis: int) -> np.ndarray:
@@ -64,17 +59,26 @@ def _rank_da(da: xr.DataArray, dim: str) -> np.ndarray:
 
 
 class CRPSSpread(base.PerVariableStatistic):
-  """The spread measure associated with CRPS, E|X - X`|."""
+  """Fair sample-based estimate of the spread measure used in CRPS, E|X - X`|.
+
+  (This is also referred to in places as Mean Absolute Difference.)
+
+  See the docstring for CRPSEnsemble for more details on what 'fair' means
+  and the two different options (use_sort=True vs False) for computing the
+  fair estimate.
+  """
 
   def __init__(
-      self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
+      self,
+      ensemble_dim: str = 'number',
+      use_sort: bool = False,
   ):
     self._ensemble_dim = ensemble_dim
-    self._skipna_ensemble = skipna_ensemble
+    self._use_sort = use_sort
 
   @property
   def unique_name(self) -> str:
-    return f'CRPSSpread_{self._ensemble_dim}_skipna_ensemble_{self._skipna_ensemble}'
+    return f'CRPSSpread_{self._ensemble_dim}'
 
   def _compute_per_variable(
       self,
@@ -82,32 +86,41 @@ class CRPSSpread(base.PerVariableStatistic):
       targets: xr.DataArray,
   ) -> xr.DataArray:
     n_ensemble = predictions.sizes[self._ensemble_dim]
-    if n_ensemble < 2:  # CRPS equates to MAE in case of n_ensemble == 1.
-      return xr.zeros_like(predictions.isel({self._ensemble_dim: 0}, drop=True))
+    if n_ensemble < 2:
+      raise ValueError('Cannot estimate CRPS spread with n_ensemble < 2.')
 
-    # one_half_spread is ̂̂λ₂ from Zamo. That is, with n_ensemble = M,
-    #   λ₂ = 1 / (2 M (M - 1)) Σ_{i,j=1}^M |Xi - Xj|
-    # See the definition of eFAIR and then
-    # eqn 3 (appendix B), which shows that this double summation of absolute
-    # differences can be written as a sum involving sorted elements multiplied
-    # by their index. That is, if X1 < X2 < ... < XM,
-    #   λ₂ = 1 / (M(M-1)) Σ_{i,j=1}^M (2*i - M - 1) Xi.
-    # The term (2*i - M - 1) is +1 times the number of terms Xi is greater than,
-    # and -1 times the number of terms Xi is less than.
-    # Here we do not sort but instead compute the rank of each element, multiply
-    # appropriately, then sum. We prefer this second form, since it involves an
-    # O(M Log[M]) compute and O(M) memory usage, whereas the first is O(M²) in
-    # compute and memory.
-    rank = _rank_da(predictions, self._ensemble_dim)
-    return (
-        2
-        * (
-            ((2 * rank - n_ensemble - 1) * predictions).mean(
-                self._ensemble_dim, skipna=self._skipna_ensemble
-            )
-        )
-        / (n_ensemble - 1)
-    )
+    if self._use_sort:
+      # one_half_spread is ̂̂λ₂ from Zamo. That is, with n_ensemble = M,
+      #   λ₂ = 1 / (2 M (M - 1)) Σ_{i,j=1}^M |Xi - Xj|
+      # See the definition of eFAIR and then
+      # eqn 3 (appendix B), which shows that this double summation of absolute
+      # differences can be written as a sum involving sorted elements multiplied
+      # by their index. That is, if X1 < X2 < ... < XM,
+      #   λ₂ = 1 / (M(M-1)) Σ_{i,j=1}^M (2*i - M - 1) Xi.
+      # The term (2*i - M - 1) is +1 times the number of terms Xi is greater
+      # than, and -1 times the number of terms Xi is less than.
+      # Here we compute the rank of each element, multiply appropriately, then
+      # sum. This second form involves an O(M Log[M]) compute and O(M) memory
+      # usage, but with a larger constant factor, whereas the first is O(M²) in
+      # compute and memory but with a smaller constant factor due to being
+      # easily parallelizable.
+      rank = _rank_da(predictions, self._ensemble_dim)
+      return (
+          2
+          * (
+              ((2 * rank - n_ensemble - 1) * predictions).mean(
+                  self._ensemble_dim, skipna=False
+              )
+          )
+          / (n_ensemble - 1)
+      )
+    else:
+      second_ensemble_dim = 'ensemble_dim_2'
+      predictions_2 = predictions.rename(
+          {self._ensemble_dim: second_ensemble_dim})
+      return abs(predictions - predictions_2).sum(
+          dim=(self._ensemble_dim, second_ensemble_dim),
+          skipna=False) / (n_ensemble * (n_ensemble - 1))
 
 
 class EnsembleVariance(base.PerVariableStatistic):
@@ -179,11 +192,23 @@ class CRPSEnsemble(base.PerVariableMetric):
   where `E` is mathematical expectation, and | ⋅ | is the absolute value. CRPS
   has a unique minimum when X is distributed the same as Y.
 
-  If N ensemble members are available, the ensemble mean is taken using the PWM
-  method from [Zamo & Naveau, 2018].
+  We implement a 'fair' sample-based estimate of CRPS based on 2 or more
+  ensemble members. 'Fair' means this is an unbiased estimate of the CRPS
+  attained by the underlying predictive distribution from which the ensemble
+  members are drawn -- equivalently, the CRPS attained in the limit of an
+  infinite ensemble.
 
-  So long as 2 or more ensemble members are used, the estimates of spread, skill
-  and CRPS are unbiased at each time.
+  [Zamo & Naveau, 2018] derive two equivalent ways to compute the same
+  fair estimator:
+
+  1. By averaging absolute differences of all pairs of distinct ensemble
+  members. This is O(M^2) in compute and memory, but easy to parallelize and
+  hence generally cheaper for small-to-medium-sized ensembles. This is
+  CRPS_{Fair} in their paper, and is the default implementation here.
+
+  2. By sorting the ensemble members and using their ranks. This is O(M log M)
+  and will be more efficient for sufficiently large ensembles. This is
+  CRPS_{PWM} in their paper. It can be enabled by setting use_sort=True.
 
   References:
 
@@ -194,7 +219,7 @@ class CRPSEnsemble(base.PerVariableMetric):
   """
 
   def __init__(
-      self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
+      self, ensemble_dim: str = 'number', use_sort: bool = False,
   ):
     """Init.
 
@@ -204,19 +229,14 @@ class CRPSEnsemble(base.PerVariableMetric):
         dimension. Default: False.
     """
     self._ensemble_dim = ensemble_dim
-    self._skipna_ensemble = skipna_ensemble
+    self._use_sort = use_sort
 
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
     return {
-        'CRPSSkill': CRPSSkill(
-            ensemble_dim=self._ensemble_dim,
-            skipna_ensemble=self._skipna_ensemble,
-        ),
+        'CRPSSkill': CRPSSkill(ensemble_dim=self._ensemble_dim),
         'CRPSSpread': CRPSSpread(
-            ensemble_dim=self._ensemble_dim,
-            skipna_ensemble=self._skipna_ensemble,
-        ),
+            ensemble_dim=self._ensemble_dim, use_sort=self._use_sort),
     }
 
   def _values_from_mean_statistics_per_variable(
