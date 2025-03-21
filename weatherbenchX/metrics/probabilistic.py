@@ -124,7 +124,10 @@ class CRPSSpread(base.PerVariableStatistic):
 
 
 class EnsembleVariance(base.PerVariableStatistic):
-  """Computes the variance in the ensemble dimension."""
+  """Computes the mean variance in the ensemble dimension.
+
+  This uses the standard unbiased estimator of variance.
+  """
 
   def __init__(
       self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
@@ -225,8 +228,9 @@ class CRPSEnsemble(base.PerVariableMetric):
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
-      skipna_ensemble: If True, NaN values will be ignored along the ensemble
-        dimension. Default: False.
+      use_sort: If True, use the sorted-rank method for computing the fair
+        estimate of CRPS. This may be more efficient for large ensembles,
+        see class docstring for more details. Default: False.
     """
     self._ensemble_dim = ensemble_dim
     self._use_sort = use_sort
@@ -374,3 +378,38 @@ class UnbiasedSpreadSkillRatio(base.PerVariableMetric):
         statistic_values['UnbiasedEnsembleMeanSquaredError']
         / statistic_values['EnsembleVariance']
     )
+
+
+class EnsembleRootMeanVariance(base.PerVariableMetric):
+  """Square root of the mean ensemble variance.
+
+  Note this is not the same thing as the mean ensemble standard deviation, and
+  is generally preferable to it.
+  """
+
+  def __init__(
+      self, ensemble_dim: str = 'number', skipna_ensemble: bool = False
+  ):
+    """Init.
+
+    Args:
+      ensemble_dim: Name of the ensemble dimension. Default: 'number'.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
+    """
+    self._ensemble_dim = ensemble_dim
+    self._skipna_ensemble = skipna_ensemble
+
+  @property
+  def statistics(self) -> Mapping[Hashable, base.Statistic]:
+    return {
+        'EnsembleVariance': EnsembleVariance(
+            ensemble_dim=self._ensemble_dim,
+            skipna_ensemble=self._skipna_ensemble,
+        ),
+    }
+
+  def _values_from_mean_statistics_per_variable(
+      self, mean_statistic_values: Mapping[Hashable, xr.DataArray],
+  ) -> xr.DataArray:
+    return np.sqrt(mean_statistic_values['EnsembleVariance'])
