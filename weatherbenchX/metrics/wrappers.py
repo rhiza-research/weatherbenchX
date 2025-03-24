@@ -90,7 +90,7 @@ class InputTransform(abc.ABC):
     """Add a suffix to unique statistics name."""
 
   @abc.abstractmethod
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     """Function to apply to predictions and/or targets."""
 
 
@@ -114,7 +114,7 @@ class EnsembleMean(InputTransform):
   def unique_name_suffix(self) -> str:
     return 'ensemble_mean'
 
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return da.mean(self._ensemble_dim, skipna=self._skipna)
 
 
@@ -153,7 +153,7 @@ class ContinuousToBinary(InputTransform):
     threshold_value_str = ','.join([str(t) for t in self._threshold_value])
     return f'{self._threshold_dim}={threshold_value_str}'
 
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return binarize_thresholds(da, self._threshold_value, self._threshold_dim)
 
 
@@ -179,7 +179,7 @@ class Rename(InputTransform):
   def unique_name_suffix(self) -> str:
     return f'rename_{self._renames}'
 
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return da.rename(self._renames)
 
 
@@ -214,7 +214,7 @@ class Select(InputTransform):
   def unique_name_suffix(self) -> str:
     return f'select_isel={self._isel}_sel={self._sel}'
 
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     da = da.copy()
     if self._sel is not None:
       da = da.sel(self._sel, **self._sel_kwargs)
@@ -256,7 +256,7 @@ class StackToNewDimension(InputTransform):
   def unique_name_suffix(self) -> str:
     return f'stack_{self._dims_to_stack}_to_{self._new_dim_name}'
 
-  def tranform_fn(self, da: xr.DataArray) -> xr.DataArray:
+  def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     stacked = da.stack({self._temporary_new_dim_name: self._dims_to_stack})
     return stacked.drop_vars(self._dims_to_stack).rename(
         {self._temporary_new_dim_name: self._new_dim_name}
@@ -290,12 +290,12 @@ class WrappedStatistic(base.Statistic):
   ) -> Mapping[Hashable, xr.DataArray]:
     if self.transform.which in ('predictions', 'both'):
       predictions = xarray_tree.map_structure(
-          self.transform.tranform_fn,
+          self.transform.transform_fn,
           predictions,
       )
     if self.transform.which in ('targets', 'both'):
       targets = xarray_tree.map_structure(
-          self.transform.tranform_fn,
+          self.transform.transform_fn,
           targets,
       )
     return self.statistic.compute(predictions, targets)
