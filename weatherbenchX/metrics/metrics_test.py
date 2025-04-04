@@ -253,7 +253,7 @@ class MetricsTest(parameterized.TestCase):
     ])
     np.testing.assert_allclose(out, correct_result)
 
-  def test_wrappers(self):
+  def test_wrapped_metric(self):
     target = (
         test_utils.mock_prediction_data(
             time_start='2020-01-01T00',
