@@ -112,7 +112,7 @@ class EnsembleMean(InputTransform):
 
   @property
   def unique_name_suffix(self) -> str:
-    return f'ensemble_mean_{self.which}'
+    return f'ensemble_mean_{self._ensemble_dim=}_{self._skipna=}'
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return da.mean(self._ensemble_dim, skipna=self._skipna)
@@ -151,7 +151,7 @@ class ContinuousToBinary(InputTransform):
   @property
   def unique_name_suffix(self) -> str:
     threshold_value_str = ','.join([str(t) for t in self._threshold_value])
-    return f'{self._threshold_dim}={threshold_value_str}_{self.which}'
+    return f'{self._threshold_dim}={threshold_value_str}'
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return binarize_thresholds(da, self._threshold_value, self._threshold_dim)
@@ -179,8 +179,9 @@ class Inline(InputTransform):
       which: Which input to apply the wrapper to. Must be one of 'predictions',
         'targets', or 'both'.
       transform_fn: Function to transform a dataarray.
-      unique_name_suffix: Name to give this transform. Should include the
-        value of `which`.
+      unique_name_suffix: Name to give this transform. Should be different than
+        any other transform used. Should uniquely identify this class and all
+        init args (except `which`).
     """
     super().__init__(which)
     self._transform_fn = transform_fn
@@ -211,7 +212,7 @@ class ReLU(InputTransform):
 
   @property
   def unique_name_suffix(self) -> str:
-    return f'relu_{self.which}'
+    return 'relu'
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return xr.where(da > 0, da, 0).where(~np.isnan(da))
@@ -267,6 +268,7 @@ class ShiftAlongNewDim(InputTransform):
       which: str,
       shift_value: Union[float, Iterable[float], xr.Dataset],
       shift_dim: str,
+      unique_name_suffix: str,
   ):
     """Initializes a ShiftAlongNewDim transform.
 
@@ -276,6 +278,9 @@ class ShiftAlongNewDim(InputTransform):
       shift_value: Constant value, list of values or xarray.Dataset.
       shift_dim: Name of dimension to use for the shift. The output will have a
         new dimension, `shift_dim`.
+      unique_name_suffix: Name to give this transform. Should be different than
+        any other transform used. Should uniquely identify this class and all
+        init args (except `which`).
     """
     super().__init__(which)
     self._shift_value = (
@@ -284,10 +289,11 @@ class ShiftAlongNewDim(InputTransform):
         else [shift_value]
     )
     self._shift_dim = shift_dim
+    self._unique_name_suffix = unique_name_suffix
 
   @property
   def unique_name_suffix(self) -> str:
-    return f'shift_along_new_dim_{self._shift_dim}_{self.which}'
+    return self._unique_name_suffix
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     # Convert self._shifts to a DataArray in all cases.
@@ -329,7 +335,7 @@ class Rename(InputTransform):
 
   @property
   def unique_name_suffix(self) -> str:
-    return f'rename_{self._renames}_{self.which}'
+    return f'rename_{self._renames}'
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     return da.rename(self._renames)
@@ -364,7 +370,7 @@ class Select(InputTransform):
 
   @property
   def unique_name_suffix(self) -> str:
-    return f'select_isel={self._isel}_sel={self._sel}'
+    return f'select_{self._isel=}_{self._isel_kwargs=}_{self._sel=}_{self._sel_kwargs=}'
 
   def transform_fn(self, da: xr.DataArray) -> xr.DataArray:
     da = da.copy()

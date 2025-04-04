@@ -113,24 +113,26 @@ class ShiftAlongNewDimTest(parameterized.TestCase):
 
   def test_constant_shift(self):
     target = test_utils.mock_target_data(random=True)
-    relu = wrappers.ShiftAlongNewDim(
-        which='both', shift_value=0.5, shift_dim='threshold'
+    shift = wrappers.ShiftAlongNewDim(
+        which='both', shift_value=0.5, shift_dim='threshold',
+        unique_name_suffix='shift_along_threshold_0.5',
     )
 
     x = target.geopotential
-    y = relu.transform_fn(x)
+    y = shift.transform_fn(x)
     expected = (x + 0.5).expand_dims(threshold=[0.5]).transpose(*y.dims)
     xr.testing.assert_equal(y, expected)
 
   def test_iterable_shift(self):
     target = test_utils.mock_target_data(random=True)
     shift_value = [0.2, 0.7]
-    relu = wrappers.ShiftAlongNewDim(
-        which='both', shift_value=shift_value, shift_dim='threshold'
+    shift = wrappers.ShiftAlongNewDim(
+        which='both', shift_value=shift_value, shift_dim='threshold',
+        unique_name_suffix='shift_along_threshold_[0.2,0.7]',
     )
 
     x = target.geopotential
-    y = relu.transform_fn(x)
+    y = shift.transform_fn(x)
     xr.testing.assert_equal(
         y.threshold,
         xr.DataArray(
@@ -150,12 +152,13 @@ class ShiftAlongNewDimTest(parameterized.TestCase):
     quantiles = [0.25, 0.75]
     shift_value = target.quantile(q=quantiles, dim='time')
 
-    relu = wrappers.ShiftAlongNewDim(
-        which='both', shift_value=shift_value, shift_dim='quantile'
+    shift = wrappers.ShiftAlongNewDim(
+        which='both', shift_value=shift_value, shift_dim='quantile',
+        unique_name_suffix='shift_along_quantile_[0.25, 0.75]',
     )
 
     x = target.geopotential
-    y = relu.transform_fn(x)
+    y = shift.transform_fn(x)
 
     for q in quantiles:
       thresh = shift_value.geopotential.sel(quantile=[q])
