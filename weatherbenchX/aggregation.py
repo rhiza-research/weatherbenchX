@@ -157,7 +157,7 @@ class AggregationState:
     )
 
   def metric_values(
-      self, metrics: Mapping[Hashable, metrics_base.Metric]
+      self, metrics: Mapping[str, metrics_base.Metric]
   ) -> xr.Dataset:
     """Returns metrics computed from the normalized statistics.
 
@@ -169,10 +169,13 @@ class AggregationState:
     """
 
     mean_statistics = self.mean_statistics()
+    metric_values = metrics_base.compute_metrics_from_statistics(
+        metrics, mean_statistics
+    )
     values = xr.Dataset()
-    for metric_name, metric in metrics.items():
-      values_for_metric = metric.values_from_mean_statistics(mean_statistics)
-      for var_name, da in values_for_metric.items():
+    for metric_name in metric_values:
+      for var_name in metric_values[metric_name]:
+        da = metric_values[metric_name][var_name]
         values[f'{metric_name}.{var_name}'] = da
     return values
 

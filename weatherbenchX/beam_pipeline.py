@@ -95,7 +95,7 @@ class LoadChunksAndAggregateStatistics(beam.DoFn):
 class ComputeMetrics(beam.DoFn):
   """Computes the metrics from the aggregated statistics."""
 
-  def __init__(self, metrics: Mapping[Hashable, metrics_base.Metric]):
+  def __init__(self, metrics: Mapping[str, metrics_base.Metric]):
     """Init.
 
     Args:
