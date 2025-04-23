@@ -26,15 +26,13 @@ from weatherbenchX.metrics import base as metrics_base
 import xarray as xr
 
 
-class LoadChunksAndAggregateStatistics(beam.DoFn):
-  """Loads prediction and target chunks, computes and aggregates statistics."""
+class LoadPredictionsAndTargets(beam.DoFn):
+  """Loads prediction and target chunks from their respective data loaders."""
 
   def __init__(
       self,
       predictions_loader: data_loaders_base.DataLoader,
       targets_loader: data_loaders_base.DataLoader,
-      metrics: Mapping[str, metrics_base.Metric],
-      aggregator: aggregation.Aggregator,
       setup_fn: Optional[Callable[[], None]] = None,
   ):
     """Init.
@@ -42,14 +40,10 @@ class LoadChunksAndAggregateStatistics(beam.DoFn):
     Args:
       predictions_loader: The data loader for the predictions.
       targets_loader: The data loader for the targets.
-      metrics: A dictionary of metrics to compute.
-      aggregator: Aggregation instance.
       setup_fn: (Optional) A function to call once per worker.
     """
     self.predictions_loader = predictions_loader
     self.targets_loader = targets_loader
-    self.metrics = metrics
-    self.aggregator = aggregator
     self.setup_fn = setup_fn
     self.is_initialized = False
 
@@ -62,31 +56,79 @@ class LoadChunksAndAggregateStatistics(beam.DoFn):
 
   def process(
       self, all_inputs: Tuple[int, Tuple[np.ndarray, Union[np.ndarray, slice]]]
-  ) -> Iterable[Tuple[int, aggregation.AggregationState]]:
-    """Returns AggregationState for a given init/lead time.
+  ) -> Iterable[
+      Tuple[
+          int,
+          Tuple[
+              Mapping[Hashable, xr.DataArray],
+              Mapping[Hashable, xr.DataArray],
+          ],
+      ]
+  ]:
+    """Returns the predictions and targets chunks for a given init/lead time.
 
     Args:
       all_inputs: (chunk_index, (init_times, lead_times))
 
     Returns:
-      (chunk_index, aggregation_state)
+      (chunk_index, (predictions_chunk, targets_chunk))
     """
-    logging.info('LoadChunksAndAggregateStatistics inputs: %s', all_inputs)
+    logging.info('LoadPredictionsAndTargets inputs: %s', all_inputs)
     chunk_index, (init_times, lead_times) = all_inputs
     targets_chunk = self.targets_loader.load_chunk(init_times, lead_times)
     predictions_chunk = self.predictions_loader.load_chunk(
         init_times, lead_times, targets_chunk
     )
     logging.info(
-        'LoadChunksAndAggregateStatistics chunks: %s',
+        'LoadPredictionsAndTargets outputs: %s',
         (chunk_index, (predictions_chunk, targets_chunk)),
     )
+    return [(chunk_index, (predictions_chunk, targets_chunk))]
+
+
+class ComputeStatisticsAndAggregateChunks(beam.DoFn):
+  """Computes the statistics for each metric and aggregates chunks."""
+
+  def __init__(
+      self,
+      metrics: Mapping[str, metrics_base.Metric],
+      aggregator: aggregation.Aggregator,
+  ):
+    """Init.
+
+    Args:
+      metrics: A dictionary of metrics to compute.
+      aggregator: Aggregation instance.
+    """
+    self.metrics = metrics
+    self.aggregator = aggregator
+
+  def process(
+      self,
+      all_inputs: Tuple[
+          int,
+          Tuple[
+              Mapping[Hashable, xr.DataArray],
+              Mapping[Hashable, xr.DataArray],
+          ],
+      ],
+  ) -> Iterable[Tuple[int, aggregation.AggregationState]]:
+    """Returns AggregationState for given predictions and targets chunks.
+
+    Args:
+      all_inputs: (chunk_index, (predictions_chunk, targets_chunk))
+
+    Returns:
+      (chunk_index, aggregation_state)
+    """
+    logging.info('ComputeStatisticsAndAggregateChunks inputs: %s', all_inputs)
+    chunk_index, (predictions_chunk, targets_chunk) = all_inputs
     statistics = metrics_base.compute_unique_statistics_for_all_metrics(
         self.metrics, predictions_chunk, targets_chunk
     )
     aggregation_state = self.aggregator.aggregate_statistics(statistics)
     logging.info(
-        'LoadChunksAndAggregateStatistics outputs: %s',
+        'ComputeStatisticsAndAggregateChunks outputs: %s',
         (chunk_index, aggregation_state),
     )
     return [(chunk_index, aggregation_state)]
@@ -167,7 +209,7 @@ def define_pipeline(
       in a single worker. If None, does aggregation in a single step. Default:
       10
     setup_fn: (Optional) A function to call once per worker in
-      LoadChunksAndAggregateStatistics.
+      LoadPredictionsAndTargets.
   """
   if max_chunks_per_aggregation_stage is None:
     max_chunks_per_aggregation_stage = len(times)
@@ -175,16 +217,14 @@ def define_pipeline(
   _ = (
       root
       | 'CreateTimeChunks' >> beam.Create(enumerate(times))  # pytype: disable=wrong-arg-types
-      | 'LoadChunksAndAggregateStatistics'
+      | 'LoadPredictionsAndTargets'
       >> beam.ParDo(
-          LoadChunksAndAggregateStatistics(
-              predictions_loader,
-              targets_loader,
-              metrics,
-              aggregator,
-              setup_fn=setup_fn,
+          LoadPredictionsAndTargets(
+              predictions_loader, targets_loader, setup_fn=setup_fn
           )
       )
+      | 'ComputeStatisticsAndAggregateChunks'
+      >> beam.ParDo(ComputeStatisticsAndAggregateChunks(metrics, aggregator))
       | 'AggregateStates'
       >> beam_utils.CombineMultiStage(
           total_num_elements=len(times),
