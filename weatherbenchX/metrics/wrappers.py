@@ -142,7 +142,7 @@ class ContinuousToBinary(InputTransform):
   def __init__(
       self,
       which: str,
-      threshold_value: Union[float, Iterable[float], xr.DataArray],
+      threshold_value: Union[float, Iterable[float], xr.DataArray, xr.Dataset],
       threshold_dim: str,
   ):
     """Init.
@@ -150,14 +150,14 @@ class ContinuousToBinary(InputTransform):
     Args:
       which: Which input to apply the wrapper to. Must be one of 'predictions',
         'targets', or 'both'.
-      threshold_value: Threshold value, list of values or xarray.dataarray.
+      threshold_value: Threshold value, list of values, xarray.DataArray or xarray.Dataset.
       threshold_dim: Name of dimension to use for threshold values.
     """
     super().__init__(which)
     # Convert to list if it isn't already.
     self._threshold_value = (
         threshold_value
-        if isinstance(threshold_value, (Iterable, xr.DataArray))
+        if isinstance(threshold_value, (Iterable, xr.DataArray, xr.Dataset))
         else [threshold_value]
     )
     self._threshold_dim = threshold_dim
