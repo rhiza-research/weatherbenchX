@@ -38,7 +38,10 @@ docs_requires = [
 tests_requires = [
     "pytest",
     "pyink",
+    # work around https://github.com/zarr-developers/zarr-python/issues/2963
+    "numcodecs<0.16.0",
 ]
+
 setuptools.setup(
     name="weatherbenchX",
     version="0.0.0",
