@@ -14,6 +14,7 @@
 """Unit tests for metrics."""
 
 import dataclasses
+import itertools
 from typing import Hashable, Mapping
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -448,25 +449,30 @@ class MetricsTest(parameterized.TestCase):
         statistic2['total_precipitation_24hr'],
     )
 
-  def _crps_spread_brute_force(self, ds: xr.Dataset) -> xr.Dataset:
+  def _crps_spread_brute_force(self, ds: xr.Dataset, fair: bool) -> xr.Dataset:
     # This version is simple enough that we can use it as a reference.
     n_ensemble = ds.sizes['realization']
     return abs(ds - ds.rename({'realization': 'dummy'})).mean(
         dim=('latitude', 'longitude', 'realization', 'dummy'), skipna=False
-    ) * (n_ensemble / (n_ensemble - 1))
+    ) * (n_ensemble / (n_ensemble - int(fair)))
 
   @parameterized.named_parameters(
-      dict(testcase_name='EnsembleSize4', ensemble_size=4, use_sort=False),
-      dict(testcase_name='EnsembleSize5', ensemble_size=5, use_sort=False),
-      dict(testcase_name='EnsembleSize4_sort', ensemble_size=4, use_sort=True),
-      dict(testcase_name='EnsembleSize5_sort', ensemble_size=5, use_sort=True),
+      dict(
+          testcase_name=f'EnsembleSize{size}_{sort=}_{fair=}',
+          ensemble_size=size,
+          use_sort=sort,
+          fair=fair,
+      )
+      for size, sort, fair in itertools.product(
+          [4, 5], [False, True], [True, False]
+      )
   )
-  def test_crps(self, ensemble_size: int, use_sort: bool):
+  def test_crps(self, ensemble_size: int, use_sort: bool, fair: bool):
     def _crps_brute_force(
         forecast: xr.Dataset, truth: xr.Dataset
     ) -> xr.Dataset:
       """The eFAIR version of CRPS from Zamo & Naveau over a chunk of data."""
-      spread = self._crps_spread_brute_force(forecast)
+      spread = self._crps_spread_brute_force(forecast, fair=fair)
       skill = abs(truth - forecast).mean(
           ('latitude', 'longitude', 'realization'), skipna=False
       )
@@ -490,7 +496,8 @@ class MetricsTest(parameterized.TestCase):
     # Test equivalience to brute force results.
     metrics = {
         'crps': probabilistic.CRPSEnsemble(
-            ensemble_dim='realization', use_sort=use_sort)
+            ensemble_dim='realization', use_sort=use_sort, fair=fair
+        )
     }
     results = compute_all_metrics(
         metrics, predictions, targets, reduce_dims=['latitude', 'longitude']
@@ -502,12 +509,19 @@ class MetricsTest(parameterized.TestCase):
       )
 
   @parameterized.named_parameters(
-      dict(testcase_name='EnsembleSize4', ensemble_size=4, use_sort=False),
-      dict(testcase_name='EnsembleSize5', ensemble_size=5, use_sort=False),
-      dict(testcase_name='EnsembleSize4_sort', ensemble_size=4, use_sort=True),
-      dict(testcase_name='EnsembleSize5_sort', ensemble_size=5, use_sort=True),
+      dict(
+          testcase_name=f'EnsembleSize{size}_{sort=}_{fair=}',
+          ensemble_size=size,
+          use_sort=sort,
+          fair=fair,
+      )
+      for size, sort, fair in itertools.product(
+          [4, 5], [False, True], [True, False]
+      )
   )
-  def test_crps_ensemble_distance(self, ensemble_size: int, use_sort: bool):
+  def test_crps_ensemble_distance(
+      self, ensemble_size: int, use_sort: bool, fair: bool
+  ):
 
     targets = test_utils.mock_prediction_data(
         time_start='2020-01-01T00',
@@ -534,12 +548,12 @@ class MetricsTest(parameterized.TestCase):
     # Test equivalience to brute force results.
     ensemble_dist_metrics = {
         'crps': probabilistic.CRPSEnsembleDistance(
-            ensemble_dim='realization', use_sort=use_sort
+            ensemble_dim='realization', use_sort=use_sort, fair=fair
         )
     }
     metrics = {
         'crps': probabilistic.CRPSEnsemble(
-            ensemble_dim='realization', use_sort=use_sort
+            ensemble_dim='realization', use_sort=use_sort, fair=fair
         )
     }
     reduce_dims = ['latitude', 'longitude', 'time']
@@ -568,12 +582,13 @@ class MetricsTest(parameterized.TestCase):
 
     # Since predictions and targets both come from Normal(0, I), the values of
     # the distance should be close to zero.
-    for v in ['2m_temperature', 'geopotential']:
-      np.testing.assert_allclose(
-          predictions_vs_targets[f'crps.{v}'],
-          0,
-          atol=5 * stderr,
-      )
+    if fair:
+      for v in ['2m_temperature', 'geopotential']:
+        np.testing.assert_allclose(
+            predictions_vs_targets[f'crps.{v}'],
+            0,
+            atol=5 * stderr,
+        )
 
     # The targets with no spread (due to all realizations the same) should give
     # the same CRPS value as standard CRPS.

@@ -40,6 +40,10 @@ class CRPSSkill(base.PerVariableStatistic):
   ) -> xr.DataArray:
     reduce_dims = [self._ensemble_dim]
     if self._ensemble_dim in targets.dims:
+      # TODO: shoyer - Add an implementation based on sort (similar to
+      # scipy.stats.energy_distance), for which runtime would scale like
+      # O((N + M) * log(N + M)) rather than O(N * M) for prediction and
+      # target realizations of sizes N and M.
       pseudo_ensemble_dim = f'{self._ensemble_dim}_PSEUDO_FOR_TARGETS'
       reduce_dims += [pseudo_ensemble_dim]
       targets = targets.rename({self._ensemble_dim: pseudo_ensemble_dim})
@@ -64,28 +68,31 @@ def _rank_da(da: xr.DataArray, dim: str) -> np.ndarray:
 
 
 class CRPSSpread(base.PerVariableStatistic):
-  """Fair sample-based estimate of the spread measure used in CRPS, E|X - X`|.
+  """Sample-based estimate of the spread measure used in CRPS, E|X - X`|.
 
   (This is also referred to in places as Mean Absolute Difference.)
 
   See the docstring for CRPSEnsemble for more details on what 'fair' means
   and the two different options (use_sort=True vs False) for computing the
-  fair estimate.
+  estimate.
   """
 
   def __init__(
       self,
       ensemble_dim: str = 'number',
       use_sort: bool = False,
+      fair: bool = True,
       which: str = 'predictions',
   ):
     self._ensemble_dim = ensemble_dim
     self._use_sort = use_sort
     self._which = which
+    self._fair = fair
 
   @property
   def unique_name(self) -> str:
-    return f'CRPSSpread_{self._ensemble_dim}_{self._which}'
+    fair_str = 'fair' if self._fair else 'unfair'
+    return f'CRPSSpread_{self._ensemble_dim}_{fair_str}_{self._which}'
 
   def _compute_per_variable(
       self,
@@ -126,14 +133,14 @@ class CRPSSpread(base.PerVariableStatistic):
                   self._ensemble_dim, skipna=False
               )
           )
-          / (n_ensemble - 1)
+          / (n_ensemble - int(self._fair))
       )
     else:
       second_ensemble_dim = 'ensemble_dim_2'
       da_2 = da.rename({self._ensemble_dim: second_ensemble_dim})
       return abs(da - da_2).sum(
           dim=(self._ensemble_dim, second_ensemble_dim), skipna=False
-      ) / (n_ensemble * (n_ensemble - 1))
+      ) / (n_ensemble * (n_ensemble - int(self._fair)))
 
 
 class EnsembleVariance(base.PerVariableStatistic):
@@ -256,25 +263,34 @@ class CRPSEnsemble(base.PerVariableMetric):
   """
 
   def __init__(
-      self, ensemble_dim: str = 'number', use_sort: bool = False,
+      self,
+      ensemble_dim: str = 'number',
+      use_sort: bool = False,
+      fair: bool = True,
   ):
     """Init.
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
       use_sort: If True, use the sorted-rank method for computing the fair
-        estimate of CRPS. This may be more efficient for large ensembles,
-        see class docstring for more details. Default: False.
+        estimate of CRPS. This may be more efficient for large ensembles, see
+        class docstring for more details. Default: False.
+      fair: If True, use the fair estimate of CRPS. If False, use the
+        conventional estimate. Default: True.
     """
     self._ensemble_dim = ensemble_dim
     self._use_sort = use_sort
+    self._fair = fair
 
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
     return {
         'CRPSSkill': CRPSSkill(ensemble_dim=self._ensemble_dim),
         'CRPSSpread': CRPSSpread(
-            ensemble_dim=self._ensemble_dim, use_sort=self._use_sort),
+            ensemble_dim=self._ensemble_dim,
+            use_sort=self._use_sort,
+            fair=self._fair,
+        ),
     }
 
   def _values_from_mean_statistics_per_variable(
@@ -324,31 +340,40 @@ class CRPSEnsembleDistance(base.PerVariableMetric):
   """
 
   def __init__(
-      self, ensemble_dim: str = 'number', use_sort: bool = False,
+      self,
+      ensemble_dim: str = 'number',
+      use_sort: bool = False,
+      fair: bool = True,
   ):
     """Init.
 
     Args:
       ensemble_dim: Name of the ensemble dimension. Default: 'number'.
       use_sort: If True, use the sorted-rank method for computing the spread
-        estimates. This may be more efficient for large ensembles,
-        see class docstring for more details. Note that this is not used
-        for the skill estimate though, which this is O(M*N) in the two ensemble
-        sizes. Default: False.
+        estimates. This may be more efficient for large ensembles, see class
+        docstring for more details. Note that this is not used for the skill
+        estimate though, which this is O(M*N) in the two ensemble sizes.
+        Default: False.
+      fair: If True, use the fair estimate of CRPS. If False, use the
+        conventional estimate. Default: True.
     """
     self._ensemble_dim = ensemble_dim
     self._use_sort = use_sort
+    self._fair = fair
 
   @property
   def statistics(self) -> Mapping[Hashable, base.Statistic]:
     return {
         'CRPSSkill': CRPSSkill(ensemble_dim=self._ensemble_dim),
         'CRPSSpread': CRPSSpread(
-            ensemble_dim=self._ensemble_dim, use_sort=self._use_sort
+            ensemble_dim=self._ensemble_dim,
+            use_sort=self._use_sort,
+            fair=self._fair,
         ),
         'CRPSTargetSpread': CRPSSpread(
             ensemble_dim=self._ensemble_dim,
             use_sort=self._use_sort,
+            fair=self._fair,
             which='targets',
         ),
     }
@@ -524,6 +549,7 @@ class EnsembleRootMeanVariance(base.PerVariableMetric):
     }
 
   def _values_from_mean_statistics_per_variable(
-      self, mean_statistic_values: Mapping[Hashable, xr.DataArray],
+      self,
+      mean_statistic_values: Mapping[Hashable, xr.DataArray],
   ) -> xr.DataArray:
     return np.sqrt(mean_statistic_values['EnsembleVariance'])
