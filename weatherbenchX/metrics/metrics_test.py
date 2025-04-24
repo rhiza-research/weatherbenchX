@@ -600,6 +600,39 @@ class MetricsTest(parameterized.TestCase):
           check_dim_order=False,
       )
 
+  def test_wasserstein_distance_simple(self):
+    predictions_ds = xr.Dataset({'var1': ('realization', np.array([0.0, 1.0]))})
+    targets_ds = xr.Dataset({'var1': ('realization', np.array([1.0, 2.0]))})
+    statistic = probabilistic.WassersteinDistance(ensemble_dim='realization')
+    results = xr.Dataset(statistic.compute(predictions_ds, targets_ds))
+    expected = xr.Dataset({'var1': 1.0})
+    xr.testing.assert_allclose(results, expected)
+
+  def test_wasserstein_distance_different_ensemble_sizes(self):
+    predictions_ds = xr.Dataset({'var1': (('realization',), np.array([2, 2]))})
+    targets_ds = xr.Dataset({'var1': (('realization',), np.array([1, 1, 1]))})
+    statistic = probabilistic.WassersteinDistance(ensemble_dim='realization')
+    results = xr.Dataset(statistic.compute(predictions_ds, targets_ds))
+    expected = xr.Dataset({'var1': 1.0})
+    xr.testing.assert_allclose(results, expected)
+
+  def test_wasserstein_distance_missing_ensemble_dim(self):
+    predictions_ds = xr.Dataset({'var1': ('realization', np.array([0.0, 1.0]))})
+    targets_ds = xr.Dataset({'var1': ('realization', np.array([1.0, 2.0]))})
+    statistic = probabilistic.WassersteinDistance(ensemble_dim='realization')
+
+    predictions_no_ens = predictions_ds.isel(realization=0)
+    with self.assertRaisesRegex(
+        ValueError, "Ensemble dimension 'realization' not found in predictions"
+    ):
+      statistic.compute(predictions_no_ens, targets_ds)
+
+    targets_no_ens = targets_ds.isel(realization=0)
+    with self.assertRaisesRegex(
+        ValueError, "Ensemble dimension 'realization' not found in targets"
+    ):
+      statistic.compute(predictions_ds, targets_no_ens)
+
   def test_spread_skill_ratio(self):
     targets = test_utils.mock_target_data(
         time_start='2020-01-01T00',

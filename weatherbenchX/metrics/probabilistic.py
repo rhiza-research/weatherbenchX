@@ -15,6 +15,7 @@
 
 from typing import Hashable, Mapping
 import numpy as np
+import scipy.stats
 from weatherbenchX.metrics import base
 from weatherbenchX.metrics import deterministic
 from weatherbenchX.metrics import wrappers
@@ -387,6 +388,57 @@ class CRPSEnsembleDistance(base.PerVariableMetric):
         statistic_values['CRPSSkill']
         - 0.5 * statistic_values['CRPSSpread']
         - 0.5 * statistic_values['CRPSTargetSpread']
+    )
+
+
+class WassersteinDistance(base.PerVariableStatistic):
+  """Computes the 1-Wasserstein distance (Earth Mover's Distance).
+
+  Calculates the distance between the prediction ensemble distribution and the
+  target ensemble distribution for each point. Requires the ensemble dimension
+  to be present in both predictions and targets.
+
+  Note that unlike the CRPS-based distances (e.g., the squared energy distance),
+  there is no "fair" version of the Wasserstein's distance, so it cannot be
+  debiased with respect to ensemble size. On average, smaller ensembles will
+  tend to have a smaller distance than larger ensembles.
+  """
+
+  def __init__(self, ensemble_dim: str = 'number'):
+    self._ensemble_dim = ensemble_dim
+
+  @property
+  def unique_name(self) -> str:
+    return f'WassersteinDistance_{self._ensemble_dim}'
+
+  def _compute_per_variable(
+      self,
+      predictions: xr.DataArray,
+      targets: xr.DataArray,
+  ) -> xr.DataArray:
+    """Computes Wasserstein distance using scipy and xr.apply_ufunc."""
+    if self._ensemble_dim not in predictions.dims:
+      raise ValueError(
+          f'Ensemble dimension {self._ensemble_dim!r} not found in '
+          f'predictions: {predictions}'
+      )
+    if self._ensemble_dim not in targets.dims:
+      raise ValueError(
+          f'Ensemble dimension {self._ensemble_dim!r} not found in '
+          f'targets: {targets}'
+      )
+
+    input_core_dims = [[self._ensemble_dim], [self._ensemble_dim]]
+
+    return xr.apply_ufunc(
+        scipy.stats.wasserstein_distance,
+        predictions,
+        targets,
+        input_core_dims=input_core_dims,
+        exclude_dims={self._ensemble_dim},  # allow different size ensembles
+        vectorize=True,  # scipy.stats.wasserstein_distance is not vectorized
+        dask='parallelized',
+        output_dtypes=[predictions.dtype],
     )
 
 
