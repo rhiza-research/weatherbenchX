@@ -13,9 +13,10 @@
 # limitations under the License.
 """Defines the beam pipeline for evaluation."""
 
+from collections.abc import Hashable
 import logging
 import typing
-from typing import Callable, Hashable, Iterable, Mapping, Optional, Tuple, Union
+from typing import Callable, Iterable, Mapping, Optional, Tuple, Union
 import apache_beam as beam
 import fsspec
 import numpy as np
@@ -29,7 +30,7 @@ import xarray_beam as xbeam
 
 
 class LoadPredictionsAndTargets(beam.DoFn):
-  """Loads prediction and target chunks from their respective data loaders."""
+  """Loads prediction and target chunks."""
 
   def __init__(
       self,
@@ -62,12 +63,11 @@ class LoadPredictionsAndTargets(beam.DoFn):
       Tuple[
           int,
           Tuple[
-              Mapping[Hashable, xr.DataArray],
-              Mapping[Hashable, xr.DataArray],
+              Mapping[Hashable, xr.DataArray], Mapping[Hashable, xr.DataArray]
           ],
       ]
   ]:
-    """Returns the predictions and targets chunks for a given init/lead time.
+    """Returns prediction and target chunks for a given init/lead time.
 
     Args:
       all_inputs: (chunk_index, (init_times, lead_times))
@@ -236,60 +236,6 @@ def define_pipeline(
       | 'ComputeMetrics' >> beam.ParDo(ComputeMetrics(metrics))
       | 'WriteMetrics' >> beam.ParDo(WriteMetrics(out_path))
   )
-
-
-class LoadPredictionsAndTargets(beam.DoFn):
-  """Loads prediction and target chunks."""
-
-  def __init__(
-      self,
-      predictions_loader: data_loaders_base.DataLoader,
-      targets_loader: data_loaders_base.DataLoader,
-      setup_fn: Optional[Callable[[], None]] = None,
-  ):
-    """Init.
-
-    Args:
-      predictions_loader: The data loader for the predictions.
-      targets_loader: The data loader for the targets.
-      setup_fn: (Optional) A function to call once per worker.
-    """
-    self.predictions_loader = predictions_loader
-    self.targets_loader = targets_loader
-    self.setup_fn = setup_fn
-    self.is_initialized = False
-
-  def setup(self):
-    # Call this function once per process.
-    if self.setup_fn is not None:
-      if not self.is_initialized:
-        self.setup_fn()
-        self.is_initialized = True
-
-  def process(
-      self, all_inputs: Tuple[int, Tuple[np.ndarray, Union[np.ndarray, slice]]]
-  ) -> Iterable[
-      Tuple[
-          int,
-          Tuple[
-              Mapping[Hashable, xr.DataArray], Mapping[Hashable, xr.DataArray]
-          ],
-      ]
-  ]:
-    """Returns prediction and target chunks for a given init/lead time.
-
-    Args:
-      all_inputs: (chunk_index, (init_times, lead_times))
-
-    Returns:
-      (chunk_index, (predictions_chunk, targets_chunk))
-    """
-    chunk_index, (init_times, lead_times) = all_inputs
-    targets_chunk = self.targets_loader.load_chunk(init_times, lead_times)
-    predictions_chunk = self.predictions_loader.load_chunk(
-        init_times, lead_times, targets_chunk
-    )
-    return [(chunk_index, (predictions_chunk, targets_chunk))]
 
 
 class ComputeAndFormatStatistics(beam.DoFn):
