@@ -333,6 +333,12 @@ def _get_template_dataset(
   # lead_time dimensions
   template = xbeam.make_template(first_chunk)
 
+  if 'mask' in template.coords:
+    raise ValueError(
+        'mask coordinate found in template. add_nan_mask=True on data loaders '
+        'is not supported for unaggregated pipelines.'
+    )
+
   if 'lead_time' in template.dims:
     vars_to_expand = [k for k, v in template.items() if 'lead_time' in v.dims]
     template = template.isel(lead_time=0, drop=True)

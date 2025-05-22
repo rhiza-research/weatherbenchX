@@ -14,7 +14,8 @@
 """Base data loader class."""
 
 import abc
-from typing import Collection, Hashable, Mapping, Optional, Union
+from collections.abc import Hashable, Mapping
+from typing import Collection, Callable, Optional, Union
 import numpy as np
 from weatherbenchX import interpolations
 from weatherbenchX import xarray_tree
@@ -71,6 +72,7 @@ class DataLoader(abc.ABC):
       interpolation: Optional[interpolations.Interpolation] = None,
       compute: bool = True,
       add_nan_mask: bool = False,
+      process_chunk_fn: Optional[Callable[[xr.Dataset], xr.Dataset]] = None,
   ):
     """Shared initialization for data loaders.
 
@@ -81,10 +83,13 @@ class DataLoader(abc.ABC):
         (variables will be split into DataArrays if they aren't already), with
         False indicating NaN values. To be used for masked aggregation. Default:
         False.
+      process_chunk_fn: optional function to be applied to each chunk after
+        loading, interpolation and compute, but before computing a mask.
     """
     self._interpolation = interpolation
     self._compute = compute
     self._add_nan_mask = add_nan_mask
+    self._process_chunk_fn = process_chunk_fn
 
   @abc.abstractmethod
   def _load_chunk_from_source(
@@ -126,6 +131,12 @@ class DataLoader(abc.ABC):
     # Compute after interpolation avoids loading unnecessary data.
     if self._compute:
       chunk = xarray_tree.map_structure(lambda x: x.compute(), chunk)
+
+    # TODO: https://github.com/google-research/weatherbenchX/issues/67 - add
+    # full functionality for computing derived variables, which would complement
+    # adhoc chunk processing with process_chunk_fn.
+    if self._process_chunk_fn is not None:
+      chunk = self._process_chunk_fn(chunk)
 
     if self._add_nan_mask:
       chunk = add_nan_mask_to_data(chunk)

@@ -66,6 +66,7 @@ class XarrayDataLoader(base.DataLoader):
       compute: bool = True,
       add_nan_mask: bool = False,
       preprocessing_fn: Optional[Callable[[xr.Dataset], xr.Dataset]] = None,
+      process_chunk_fn: Optional[Callable[[xr.Dataset], xr.Dataset]] = None,
   ):
     """Init.
 
@@ -97,6 +98,8 @@ class XarrayDataLoader(base.DataLoader):
         False.
       preprocessing_fn: (Optional) A function that is applied to the dataset
         right after it is opened.
+      process_chunk_fn: (Optional) A function that is applied to each chunk
+        after loading, interpolation and compute, but before computing a mask.
     """
     if path is not None and ds is not None:
       raise ValueError('Only one of path or ds can be specified, not both.')
@@ -126,6 +129,7 @@ class XarrayDataLoader(base.DataLoader):
         interpolation=interpolation,
         compute=compute,
         add_nan_mask=add_nan_mask,
+        process_chunk_fn=process_chunk_fn,
     )
 
   def _load_chunk_from_source(

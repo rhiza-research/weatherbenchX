@@ -209,10 +209,15 @@ def compute_unique_statistics_for_all_metrics(
   for m in metrics.values():
     for _, stat in m.statistics.items():
       unique_statistics[stat.unique_name] = stat
-  statistic_values = {
-      k: stat.compute(predictions, targets)
-      for k, stat in unique_statistics.items()
-  }
+  statistic_values = {}
+  for k, stat in unique_statistics.items():
+    try:
+      statistic_values[k] = stat.compute(predictions, targets)
+    except Exception as e:
+      raise ValueError(
+          'Failed to compute statistic'
+          f' {k}={stat} from:\n{predictions=}\n{targets=}'
+      ) from e
   return statistic_values
 
 
