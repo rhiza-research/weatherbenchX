@@ -16,6 +16,7 @@
 from typing import Hashable, Mapping, Sequence, Union
 import numpy as np
 from weatherbenchX.metrics import base
+from weatherbenchX.metrics import wrappers
 import xarray as xr
 
 
@@ -32,9 +33,11 @@ class TruePositives(base.PerVariableStatistic):
       targets: xr.DataArray,
   ) -> xr.DataArray:
 
-    return (predictions.astype(bool) * targets.astype(bool)).where(
-        ~np.isnan(predictions * targets)
-    ).astype(np.float32)
+    return (
+        (predictions.astype(bool) * targets.astype(bool))
+        .where(~np.isnan(predictions * targets))
+        .astype(np.float32)
+    )
 
 
 class TrueNegatives(base.PerVariableStatistic):
@@ -50,9 +53,11 @@ class TrueNegatives(base.PerVariableStatistic):
       targets: xr.DataArray,
   ) -> xr.DataArray:
 
-    return (~predictions.astype(bool) * ~targets.astype(bool)).where(
-        ~np.isnan(predictions * targets)
-    ).astype(np.float32)
+    return (
+        (~predictions.astype(bool) * ~targets.astype(bool))
+        .where(~np.isnan(predictions * targets))
+        .astype(np.float32)
+    )
 
 
 class FalsePositives(base.PerVariableStatistic):
@@ -68,9 +73,11 @@ class FalsePositives(base.PerVariableStatistic):
       targets: xr.DataArray,
   ) -> xr.DataArray:
 
-    return (predictions.astype(bool) * ~targets.astype(bool)).where(
-        ~np.isnan(predictions * targets)
-    ).astype(np.float32)
+    return (
+        (predictions.astype(bool) * ~targets.astype(bool))
+        .where(~np.isnan(predictions * targets))
+        .astype(np.float32)
+    )
 
 
 class FalseNegatives(base.PerVariableStatistic):
@@ -85,9 +92,11 @@ class FalseNegatives(base.PerVariableStatistic):
       predictions: xr.DataArray,
       targets: xr.DataArray,
   ) -> xr.DataArray:
-    return (~predictions.astype(bool) * targets.astype(bool)).where(
-        ~np.isnan(predictions * targets)
-    ).astype(np.float32)
+    return (
+        (~predictions.astype(bool) * targets.astype(bool))
+        .where(~np.isnan(predictions * targets))
+        .astype(np.float32)
+    )
 
 
 class SEEPSStatistic(base.Statistic):
@@ -410,6 +419,64 @@ class FrequencyBias(base.PerVariableMetric):
     return (
         statistic_values['TruePositives'] + statistic_values['FalsePositives']
     ) / (statistic_values['TruePositives'] + statistic_values['FalseNegatives'])
+
+
+class Reliability(base.PerVariableMetric):
+  """Reliability / calibration curve.
+
+  E.g. see
+  https://scikit-learn.org/stable/auto_examples/calibration/plot_calibration_curve.html.
+
+  This metric should be used for binary ground truth and probability
+  predictions. It will automatically apply binning to the predictions into 10
+  equal-width bins, assuming the predictions are in [0, 1]. You can modify the
+  number of bins and the bin edges by passing in `bin_values` and `bin_dim`. For
+  each bin of predicted probabilities, the metric will compute the  probability
+  of the positive class according to the ground truth.
+  """
+
+  def __init__(
+      self,
+      bin_values: Sequence[float] = (
+          0.1,
+          0.2,
+          0.3,
+          0.4,
+          0.5,
+          0.6,
+          0.7,
+          0.8,
+          0.9,
+      ),
+      bin_dim: str = 'reliability_bin',
+  ):
+    self._bin_values = bin_values
+    self._bin_dim = bin_dim
+
+  @property
+  def statistics(self) -> Mapping[Hashable, base.Statistic]:
+    binned_prediction_wrapper = wrappers.ContinuousToBins(
+        which='predictions',
+        bin_values=self._bin_values,
+        bin_dim=self._bin_dim,
+    )
+    return {
+        'TruePositives': wrappers.WrappedStatistic(
+            TruePositives(), binned_prediction_wrapper
+        ),
+        'FalsePositives': wrappers.WrappedStatistic(
+            FalsePositives(), binned_prediction_wrapper
+        ),
+    }
+
+  def _values_from_mean_statistics_per_variable(
+      self,
+      statistic_values: Mapping[Hashable, xr.DataArray],
+  ) -> xr.DataArray:
+    """Computes metrics from aggregated statistics."""
+    return statistic_values['TruePositives'] / (
+        statistic_values['TruePositives'] + statistic_values['FalsePositives']
+    )
 
 
 class SEEPS(base.Metric):
