@@ -518,8 +518,8 @@ class SpreadSkillRatio(base.PerVariableMetric):
   ) -> xr.DataArray:
     """Computes metrics from aggregated statistics."""
     return np.sqrt(
-        statistic_values['EnsembleMeanSquaredError']
-        / statistic_values['EnsembleVariance']
+        statistic_values['EnsembleVariance']
+        / statistic_values['EnsembleMeanSquaredError']
     )
 
 
@@ -566,8 +566,8 @@ class UnbiasedSpreadSkillRatio(base.PerVariableMetric):
   ) -> xr.DataArray:
     """Computes metrics from aggregated statistics."""
     return np.sqrt(
-        statistic_values['UnbiasedEnsembleMeanSquaredError']
-        / statistic_values['EnsembleVariance']
+        statistic_values['EnsembleVariance']
+        / statistic_values['UnbiasedEnsembleMeanSquaredError']
     )
 
 
