@@ -204,7 +204,11 @@ class UnbiasedEnsembleMeanSquaredError(base.PerVariableStatistic):
       predictions_var = predictions.var(
           dim=self._ensemble_dim, ddof=1, skipna=self._skipna_ensemble
       )
-      predictions_bias = predictions_var / predictions.count(self._ensemble_dim)
+      if self._skipna_ensemble:
+        num_predictions = predictions.count(self._ensemble_dim)
+      else:
+        num_predictions = predictions.sizes[self._ensemble_dim]
+      predictions_bias = predictions_var / num_predictions
     else:
       raise ValueError(
           f'Dimension {self._ensemble_dim} not found in {predictions.dims}'
@@ -217,7 +221,11 @@ class UnbiasedEnsembleMeanSquaredError(base.PerVariableStatistic):
       targets_var = targets.var(
           dim=self._ensemble_dim, ddof=1, skipna=self._skipna_ensemble
       )
-      targets_bias = targets_var / targets.count(self._ensemble_dim)
+      if self._skipna_ensemble:
+        num_targets = targets.count(self._ensemble_dim)
+      else:
+        num_targets = targets.sizes[self._ensemble_dim]
+      targets_bias = targets_var / num_targets
     else:
       targets_mean = targets
       targets_bias = 0.0
