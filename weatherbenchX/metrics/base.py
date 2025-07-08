@@ -120,8 +120,7 @@ class Metric(abc.ABC):
     multiple `Metric`s.
   * A function to compute the metric's final value from (weighted) *means* of
     the statistics, computed in aggregate over multiple prediction/target pairs.
-    This is specified by implementing
-    `_values_from_mean_statistics_with_internal_names`.
+    This is specified by implementing `values_from_mean_statistics`.
 
   As an example, the `RMSE` metric is defined by the specifying the
   `SquaredError` statistic, which returns squared errors of prediction/target
@@ -144,27 +143,14 @@ class Metric(abc.ABC):
 
     The keys of this Mapping are internal names for the statistics which will
     be used to pass the mean values of the requested statistics to you in your
-    `_values_from_mean_statistics_with_internal_names` method. They are not
-    required to be unique outside of a specific Metric instance;
-    externally the .unique_name of the Statistic will be used instead, the
-    internal names can be chosen to be more convenient for the Metric.
+    `values_from_mean_statistics` method. They are not required to be unique
+    outside of a specific Metric instance; externally the .unique_name of the
+    Statistic will be used instead, the internal names can be chosen to be more
+    convenient for the Metric.
     """
 
-  def values_from_mean_statistics(
-      self,
-      statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
-  ) -> Mapping[Hashable, xr.DataArray]:
-    """Computes metrics from mean statistics, given by their .unique_name."""
-    # Rename statistics from unique to internal names.
-    statistic_values = {
-        k: statistic_values[v.unique_name] for k, v in self.statistics.items()
-    }
-    return self._values_from_mean_statistics_with_internal_names(
-        statistic_values
-    )
-
   @abc.abstractmethod
-  def _values_from_mean_statistics_with_internal_names(
+  def values_from_mean_statistics(
       self,
       statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
   ) -> Mapping[Hashable, xr.DataArray]:
@@ -188,7 +174,7 @@ class Metric(abc.ABC):
 class PerVariableMetric(Metric):
   """Abstract base class for metrics that are computed per variable."""
 
-  def _values_from_mean_statistics_with_internal_names(
+  def values_from_mean_statistics(
       self,
       statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
   ) -> Mapping[Hashable, xr.DataArray]:
@@ -274,13 +260,46 @@ def compute_unique_statistics_for_all_metrics(
   return statistic_values
 
 
+def compute_metric_from_statistics(
+    metric: Metric,
+    statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
+) -> Mapping[Hashable, xr.DataArray]:
+  """Computes values of a metric from mean statistics keyed by .unique_name.
+
+  This handles re-keying the statistics by the internal names used by the
+  `metric`.
+
+  Args:
+    metric: A Metric.
+    statistic_values: Values of statistics keyed by their .unique_name,
+      for example as returned by compute_unique_statistics_for_all_metrics.
+
+  Returns:
+    The resulting values of the `metric`.
+  """
+  # Rename statistics from unique to internal names.
+  statistic_values = {
+      k: statistic_values[v.unique_name] for k, v in metric.statistics.items()
+  }
+  return metric.values_from_mean_statistics(statistic_values)
+
+
 def compute_metrics_from_statistics(
     metrics: Mapping[str, Metric],
     statistic_values: Mapping[str, Mapping[Hashable, xr.DataArray]],
 ) -> Mapping[str, Mapping[Hashable, xr.DataArray]]:
-  """Computes metrics from averaged statistics."""
+  """Computes multiple metrics from mean statistics keyed by .unique_name.
+
+  Args:
+    metrics: A mapping of multiple `Metric`s.
+    statistic_values: Values of statistics keyed by their .unique_name,
+      for example as returned by compute_unique_statistics_for_all_metrics.
+
+  Returns:
+    The resulting values of the `metrics`.
+  """
   return {
-      metric_name: metric.values_from_mean_statistics(statistic_values)
+      metric_name: compute_metric_from_statistics(metric, statistic_values)
       for metric_name, metric in metrics.items()
   }
 
