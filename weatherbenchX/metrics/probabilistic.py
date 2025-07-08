@@ -451,7 +451,7 @@ class WassersteinDistance(base.PerVariableStatistic):
 
 
 class UnbiasedEnsembleMeanRMSE(base.PerVariableMetric):
-  """Unbiased estimate of the ensemble mean RMSE."""
+  """Square root of the unbiased estimate of the ensemble mean MSE."""
 
   def __init__(
       self, ensemble_dim: str = 'number', skipna_ensemble: bool = False

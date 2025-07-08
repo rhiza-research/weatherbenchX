@@ -414,7 +414,7 @@ class MetricsTest(parameterized.TestCase):
       )
       climatology[f'{variable}_seeps_threshold'] = climatology[variable] + 1
 
-    seeps = categorical.SEEPSStatistic(
+    seeps = categorical.SEEPS(
         climatology=climatology,
         variables=['total_precipitation_6hr', 'total_precipitation_24hr'],
     )
@@ -431,7 +431,7 @@ class MetricsTest(parameterized.TestCase):
       np.testing.assert_allclose(statistic[variable].values, 1.25, atol=1e-4)
 
     # Also test case where different parameters are used.
-    seeps = categorical.SEEPSStatistic(
+    seeps = categorical.SEEPS(
         climatology=climatology,
         variables=['total_precipitation_6hr', 'total_precipitation_24hr'],
         dry_threshold_mm=[0.25, 0.25],
