@@ -76,6 +76,58 @@ def _region_to_mask(
   return np.logical_and(lat_mask, lon_mask)
 
 
+class LandSea(Binning):
+  """Class for land/sea mask binning."""
+
+  def __init__(
+      self,
+      land_sea_fraction: xr.DataArray,
+      land_sea_threshold: float = 0.5,
+      bin_dim_name: str = 'land_sea',
+      include_global_mask: bool = False,
+  ):
+    """Init.
+
+    Args:
+      land_sea_fraction: Floating point land-sea fraction with same latitude/
+        longitude coordinates as the statistic. 100% land is represented as 1
+        and 100% sea as 0.
+      land_sea_threshold: Threshold to classify as land. Computed as
+        land_sea_fraction >= land_sea_threshold. (Default of 0.5 follows ECMWF
+        convention).
+      bin_dim_name: Name of binning dimension. Default: 'land_sea'
+      include_global_mask: If True, the output mask will consist of
+        ['land', 'sea', 'global'], otherwise ['land', 'sea']. 'global' is the
+        union of land and sea. Default: False.
+    """
+    super().__init__(bin_dim_name)
+    # Force to bool to make sure it is a boolean mask.
+    self._land_mask = land_sea_fraction >= land_sea_threshold
+    self._include_global_mask = include_global_mask
+
+  def create_bin_mask(
+      self,
+      statistic: xr.DataArray,
+  ) -> xr.DataArray:
+    """Creates a bin mask for a statistic.
+
+    Args:
+      statistic: Individual DataArray with statistic values.
+
+    Returns:
+      bin_mask: Boolean mask with output bins: ['land', 'sea', 'global'].
+    """
+    masks = [self._land_mask, 1 - self._land_mask]
+    labels = ['land', 'sea']
+    if self._include_global_mask:
+      masks.append(xr.ones_like(self._land_mask))
+      labels.append('global')
+
+    masks = xr.concat(masks, dim=self.bin_dim_name,)
+    masks.coords[self.bin_dim_name] = np.array(labels)
+    return masks
+
+
 class Regions(Binning):
   """Class for rectangular region binning.
 
