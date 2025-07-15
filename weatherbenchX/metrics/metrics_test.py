@@ -599,6 +599,65 @@ class MetricsTest(parameterized.TestCase):
           check_dim_order=False,
       )
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name=f'fair_{fair}_targ_temp_{targ_temp}',
+          fair=fair,
+          targ_temp=targ_temp,
+          expected_rps=expected_rps,
+      )
+      # Expected values for the RPS metric were computed by hand on the
+      # dataset provided by test_utils.
+      for fair, targ_temp, expected_rps in [
+          (False, 0.1, 0.76),
+          (False, 0.2, 0.76),
+          (False, 0.7, 1.36),
+          (False, 0.9, 1.96),
+          (True, 0.1, 0.60),
+          (True, 0.2, 0.60),
+          (True, 0.7, 1.20),
+          (True, 0.9, 1.80),
+      ]
+  )
+  def test_rps_on_handwritten_small_data(
+      self,
+      expected_rps: float,
+      targ_temp: float,
+      fair: bool,
+  ):
+    """Tests that RPS calculation is correct on a small dataset."""
+
+    # Create dummy data for variables
+    pred_temp = [0.1, 0.3, 0.3, 0.4, 0.9]
+    num_samples = len(pred_temp)
+
+    # Create predictions and targets datasets.
+    pred = xr.Dataset(
+        {'temperature': (('sample',), pred_temp)},
+        coords={'sample': np.arange(num_samples)},
+    )
+    targ = xr.Dataset({'temperature': ((), targ_temp)})
+
+    bin_thresholds_np = np.linspace(0.2, 0.8, 4)
+    bin_thresholds_ds = xr.Dataset(
+        data_vars={var: (['bin'], bin_thresholds_np) for var in targ.data_vars},
+        coords={'bin': np.arange(len(bin_thresholds_np))},
+    )
+    statistic = probabilistic.RankedProbabilityScore(
+        prediction_bin_thresholds=bin_thresholds_ds,
+        target_bin_thresholds=bin_thresholds_ds,
+        unique_name_suffix='test',
+        bin_dim='bin',
+        ensemble_dim='sample',
+        fair=fair,
+        prediction_bin_preprocess_fn=None,
+        target_bin_preprocess_fn=None,
+    ).compute(pred, targ)
+
+    # Check calculation matches the expected RPS, which has been determined by
+    # writing out the cacluation manually.
+    np.testing.assert_allclose(statistic['temperature'].values, expected_rps)
+
   def test_wasserstein_distance_simple(self):
     predictions_ds = xr.Dataset({'var1': ('realization', np.array([0.0, 1.0]))})
     targets_ds = xr.Dataset({'var1': ('realization', np.array([1.0, 2.0]))})

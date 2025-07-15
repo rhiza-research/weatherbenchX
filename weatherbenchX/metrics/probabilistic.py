@@ -13,7 +13,7 @@
 # limitations under the License.
 """Implementation of probabilistic metrics and assiciated statistics."""
 
-from typing import Mapping
+from typing import Callable, Mapping, Optional
 import numpy as np
 import scipy.stats
 from weatherbenchX.metrics import base
@@ -231,6 +231,194 @@ class UnbiasedEnsembleMeanSquaredError(base.PerVariableStatistic):
       targets_bias = 0.0
     biased_mse = (predictions_mean - targets_mean) ** 2
     return biased_mse - predictions_bias - targets_bias
+
+
+def select_bin_thresholds_by_time_from_target_or_prediction(
+    bin_thresholds: xr.DataArray,
+    da: xr.DataArray,
+) -> xr.DataArray:
+  """Selects bin thresholds by time from target or prediction data array.
+
+  This function is used to select bin thresholds using the time coordinates of
+  the target / prediction data array da. It handles two cases:
+  1. The bin thresholds have valid_time dimension. In this case, we select the
+     bin thresholds corresponding to the init_time + lead_time of da.
+  2. The bin thresholds have init_time and lead_time dimensions. In this case,
+     we simply select the bin thresholds corresponding to the init_time and
+     lead_time of da.
+
+  Args:
+    bin_thresholds: Data array containing bin thresholds.
+    da: Data array of targets or predictions to use for selecting bin thresholds
+      according to their time coordinates.
+
+  Returns:
+    Data array containing bin thresholds selected by time.
+  """
+
+  # For now only support cases where init and lead times are present in chunk.
+  if not {'init_time', 'lead_time'}.issubset(da.dims):
+    raise ValueError('Chunk must have init_time and lead_time dimensions.')
+
+  if 'valid_time' in bin_thresholds.dims:
+    bin_thresholds = bin_thresholds.sel(valid_time=da.init_time + da.lead_time)
+
+  elif {'init_time', 'lead_time'}.issubset(bin_thresholds.dims):
+    bin_thresholds = bin_thresholds.sel(
+        init_time=da.init_time, lead_time=da.lead_time
+    )
+
+  # TODO(srasp, stratismarkou): add day of year support.
+  else:
+    raise ValueError(
+        'Thresholds must have valid_time or (init_time, lead_time) dimensions.'
+    )
+
+  return bin_thresholds.compute()
+
+
+class RankedProbabilityScore(base.PerVariableStatistic):
+  """Ranked probability score for an ensemble prediction.
+
+  The RPS implemented here is either biased if fair=False, or unbiased if
+  fair=True.
+
+  Given a ground truth scalar random variable Y, a prediction random variable X,
+  a sequence of bin boundaries b_0 < b_1 < ... < b_k, where b_0 = -inf and
+  b_K = +inf, the Ranked Probability Score is defined as
+
+    RPS = E[ Σk (CDF(Y)(b_k) - CDF(X)(b_k))^2 ]
+
+  where the sum over k is taken over k = 1, 2, ..., K, and CDF(X) and CDF(Y)
+  are the cumulative distribution functions of X and Y, respectively.
+
+  In practice the CDFs are estimated by binning samples from targets and
+  predictions in the bins defined by the bin boundaries, e.g. given N iid
+  prediction samples X1, ..., XN, we estimate
+
+    CDF(X)(b_k) ≈ count(Xn <= b_k) / N,
+
+  where the count is taken over n = 1, 2, ..., N, and similarly for CDF(Y).
+  Because we are using a finite-size sample to estimate the CDFs, this
+  approximation introduces bias due to the square operation in RPS. We implement
+  a 'fair' estimate of RPS that removes this bias, by using the unbiased mean
+  squared error estimator. Note that the de-biasing of the fair estimator is
+  only applicable (and only applied) for ensembles. So, in the typical case
+  where the predictions are ensembles and the targets are not, the fair estimate
+  applies debiasing for the predictions, not for the targets.
+  """
+
+  def __init__(
+      self,
+      prediction_bin_thresholds: xr.Dataset,
+      target_bin_thresholds: xr.Dataset,
+      bin_dim: str,
+      unique_name_suffix: str,
+      ensemble_dim: str = 'number',
+      skipna_ensemble: bool = False,
+      fair: bool = True,
+      prediction_bin_preprocess_fn: (
+          Callable[[xr.DataArray, xr.DataArray], xr.DataArray] | None
+      ) = select_bin_thresholds_by_time_from_target_or_prediction,
+      target_bin_preprocess_fn: (
+          Callable[[xr.DataArray, xr.DataArray], xr.DataArray] | None
+      ) = select_bin_thresholds_by_time_from_target_or_prediction,
+  ):
+    """Init.
+
+    Args:
+      prediction_bin_thresholds: Dataset of bin boundaries. These are applied
+        only to the predictions.
+      target_bin_thresholds: Dataset of bin boundaries. These are applied only
+        to the targets.
+      bin_dim: Name of the bin dimension in the bin thresholds.
+      unique_name_suffix: Optional suffix to add to the unique name.
+      ensemble_dim: Name of the ensemble dimension. Default: 'number'.
+      skipna_ensemble: If True, NaN values will be ignored along the ensemble
+        dimension. Default: False.
+      fair: If True, use the fair estimate of RPS. If False, use the
+        conventional estimate. Default: True.
+      prediction_bin_preprocess_fn: Function to preprocess the prediction bin
+        thresholds. The select_bin_thresholds_by_time_from_target_or_prediction
+        default value selects the bin thresholds corresponding to the prediction
+        data array by time, see its docstring for more details.
+      target_bin_preprocess_fn: Function to preprocess the target bin
+        thresholds. The select_bin_thresholds_by_time_from_target_or_prediction
+        default value selects the bin thresholds corresponding to the target
+        data array by time, see its docstring for more details.
+    """
+    self._prediction_bin_thresholds = prediction_bin_thresholds
+    self._target_bin_thresholds = target_bin_thresholds
+    self._ensemble_dim = ensemble_dim
+    self._skipna_ensemble = skipna_ensemble
+    self._fair = fair
+    self._bin_dim = bin_dim
+    self._prediction_bin_preprocess_fn = prediction_bin_preprocess_fn
+    self._target_bin_preprocess_fn = target_bin_preprocess_fn
+    self._unique_name_suffix = unique_name_suffix
+
+    if self._fair:
+      self._mse_fn = UnbiasedEnsembleMeanSquaredError(
+          ensemble_dim=self._ensemble_dim,
+          skipna_ensemble=self._skipna_ensemble,
+      )
+
+    else:
+      self._mse_fn = wrappers.WrappedStatistic(
+          deterministic.SquaredError(),
+          wrappers.EnsembleMean(
+              which='both',
+              ensemble_dim=self._ensemble_dim,
+              skipna=self._skipna_ensemble,
+              # In the case where the targets are not an ensemble, we want to
+              # skip the ensemble mean. We could have done which='predictions'
+              # instead, but this would prevent us from using an ensemble as
+              # the target, which may be useful functionality.
+              skip_if_ensemble_dim_missing=True,
+          ),
+      )
+
+  @property
+  def unique_name(self) -> str:
+    return (
+        f'RankedProbabilityScore_{self._ensemble_dim}_'
+        f'skipna_ensemble_{self._skipna_ensemble}_'
+        f'fair_{self._fair}_'
+        f'{self._unique_name_suffix}'
+    )
+
+  def _compute_per_variable(
+      self,
+      predictions: xr.DataArray,
+      targets: xr.DataArray,
+  ) -> xr.DataArray:
+
+    pred_bin_thresholds = self._prediction_bin_thresholds[predictions.name]
+    if self._prediction_bin_preprocess_fn is not None:
+      pred_bin_thresholds = self._prediction_bin_preprocess_fn(
+          pred_bin_thresholds, predictions
+      )
+
+    targ_bin_thresholds = self._target_bin_thresholds[targets.name]
+    if self._target_bin_preprocess_fn is not None:
+      targ_bin_thresholds = self._target_bin_preprocess_fn(
+          targ_bin_thresholds, targets
+      )
+
+    # Note: this way of computing the CDF does not include the rightmost bin
+    # but this is always 1. (since any entry is < inf) and will be the same
+    # between predictions and targets, so they won't contribute to the sum.
+    pred_cdf = predictions <= pred_bin_thresholds
+    targ_cdf = targets <= targ_bin_thresholds
+
+    # Compute the mean squared error, noting that the "mean" is referring to
+    # the ensemble dimension (if applicable), not the bin dimension.
+    # TODO(stratismarkou, matthjw): make _compute_per_variable into a public
+    # method so we can reuse it in cases like the one below.
+    cdf_mse = self._mse_fn.compute({'cdf': pred_cdf}, {'cdf': targ_cdf})['cdf']
+
+    # RPS is the sum of squared errors over the bin dimension.
+    return cdf_mse.sum(self._bin_dim, skipna=self._skipna_ensemble)
 
 
 ### Metrics
