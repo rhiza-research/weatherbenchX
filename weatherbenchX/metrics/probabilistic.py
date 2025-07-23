@@ -13,10 +13,11 @@
 # limitations under the License.
 """Implementation of probabilistic metrics and assiciated statistics."""
 
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, Tuple
 import numpy as np
 import scipy.stats
 from weatherbenchX.metrics import base
+from weatherbenchX.metrics import categorical
 from weatherbenchX.metrics import deterministic
 from weatherbenchX.metrics import wrappers
 import xarray as xr
@@ -801,3 +802,104 @@ class EnsembleRootMeanVariance(base.PerVariableMetric):
       mean_statistic_values: Mapping[str, xr.DataArray],
   ) -> xr.DataArray:
     return np.sqrt(mean_statistic_values['EnsembleVariance'])
+
+
+class RelativeEconomicValue(base.PerVariableMetric):
+  """Relative economic value.
+
+  This metric assumes that the targets are a binary and the predictions
+  are probabilities between in [0, 1]. It computes REV across all possible
+  decision thresholds for a given ensemble size.
+  """
+
+  def __init__(self,
+               ensemble_size: int,
+               cost_loss_ratios: Optional[np.ndarray] = None
+               ):
+
+    thresholds = (np.arange(ensemble_size) + 0.5) / ensemble_size
+
+    self._thresholds = xr.DataArray(
+        thresholds,
+        dims=['threshold'], coords={'threshold': thresholds})
+
+    if cost_loss_ratios is None:
+      cost_loss_ratios = np.geomspace(0.005, 1, 51)[:-1]
+
+    self._cost_loss_ratio = xr.DataArray(
+        cost_loss_ratios,
+        dims=['cost_loss_ratio'],
+        coords={'cost_loss_ratio': cost_loss_ratios})
+
+  @property
+  def statistics(self) -> Mapping[str, base.Statistic]:
+    binarize = wrappers.ContinuousToBinary(
+        which='predictions',
+        threshold_value=self._thresholds,
+        threshold_dim='threshold',
+    )
+
+    return {'TruePositives': wrappers.WrappedStatistic(
+                categorical.TruePositives(), binarize),
+            'TrueNegatives': wrappers.WrappedStatistic(
+                categorical.TrueNegatives(), binarize),
+            'FalsePositives': wrappers.WrappedStatistic(
+                categorical.FalsePositives(), binarize),
+            'FalseNegatives': wrappers.WrappedStatistic(
+                categorical.FalseNegatives(), binarize)
+            }
+
+  def _add_constant_threshold_results(
+      self, tp: xr.DataArray, fp: xr.DataArray, fn: xr.DataArray
+      ) -> Tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
+    base_rate = (
+        tp.isel(threshold=0, drop=True) + fn.isel(threshold=0, drop=True)
+    )
+    zero = xr.full_like(base_rate, 0.)
+
+    def at(x, threshold):
+      return x.expand_dims(threshold=[threshold])
+
+    # At probability threshold 0: always positive. fn = 0, tp = base_rate,
+    # fp = 1-base_rate. At probability threshold 1: predict positive if p > 1,
+    # so always negative. fn = base_rate, tp = 0, fp = 0.
+    tp = xr.concat(
+        [at(base_rate, 0.), tp, at(zero, 1.)], dim='threshold')
+    fp = xr.concat(
+        [at(1. - base_rate, 0.), fp, at(zero, 1.)], dim='threshold')
+    fn = xr.concat(
+        [at(zero, 0.), fn, at(base_rate, 1.)], dim='threshold')
+    return tp, fp, fn
+
+  def _values_from_mean_statistics_per_variable(
+      self,
+      statistic_values: Mapping[str, xr.DataArray],
+  ) -> xr.DataArray:
+    """Computes REV from confusion matrices for all c/l ratios & thresholds.
+
+    Note that one still needs to choose which threshold(s) from which to report
+    REV. This typically either involves taking the max REV over all thresholds
+    for each cost/loss ratio (if reporting "recalibrating" REV), or setting the
+    threshold equal to (the closest) threshold to the considered cost/loss
+    ratio.
+
+    TODO(pricei): Add an option to specify the desired threshold(s) directly,
+    for use when writing out the metrics for all thresholds and all cost/loss
+    ratios gets too expensive.
+
+    Args:
+      statistic_values: The confusion matrices components for all thresholds.
+
+    Returns:
+      The REV values for all thresholds and cost/loss ratios.
+    """
+
+    tp = statistic_values['TruePositives']
+    fp = statistic_values['FalsePositives']
+    fn = statistic_values['FalseNegatives']
+    tp, fp, fn = self._add_constant_threshold_results(tp, fp, fn)
+
+    pred_cost = self._cost_loss_ratio * (tp + fp) + fn
+    perf_cost = self._cost_loss_ratio * (tp + fn)
+    clim_cost = np.minimum(self._cost_loss_ratio, tp + fn)
+    return (clim_cost - pred_cost) / (clim_cost - perf_cost)
