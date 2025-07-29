@@ -15,20 +15,6 @@
 import setuptools
 
 base_requires = [
-    "apache_beam[gcp]>=2.31.0",
-    "cftime>=1.6.2",
-    "numpy>=2.1.3",
-    "pandas>=2.2.3",
-    "scipy",
-    "scikit-learn",
-    "xarray>=2025.7.0",
-    "zarr",
-    "fsspec",
-    "gcsfs",
-    "absl-py",
-    "pyarrow",
-    "opt_einsum",
-    "xarray-beam",
 ]
 docs_requires = [
     "myst-nb",
@@ -56,5 +42,4 @@ setuptools.setup(
     },
     url="https://github.com/google-research/weatherbenchX",
     packages=setuptools.find_packages(),
-    python_requires=">=3,<3.12",  # Because pyarrow won't compile with >3.11
 )
